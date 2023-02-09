@@ -1,0 +1,16 @@
+<launch>
+
+    <!-- what config we are going to run (should match folder name) -->
+    <arg name="verbosity"   default="INFO" /> <!-- ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
+    <arg name="config"      default="euroc_mav" /> <!-- euroc_mav, tum_vi, rpng_aruco -->
+    <arg name="config_path" default="$(find ov_msckf)/../config/$(arg config)/estimator_config.yaml" />
+
+    <!-- MASTER NODE! -->
+    <node name="run_subscribe_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen">
+        <param name="verbosity"    type="string" value="$(arg verbosity)" />
+        <param name="config_path"  type="string" value="$(arg config_path)" />
+        <param name="use_stereo"   type="bool"   value="true" />
+        <param name="max_cameras"  type="int"    value="2" />
+    </node>
+
+</launch>
