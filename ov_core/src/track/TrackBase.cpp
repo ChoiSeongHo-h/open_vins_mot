@@ -196,7 +196,11 @@ void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2
         int color_b = (is_stereo ? g2 : b2) - (int)(1.0 * (is_stereo ? g1 : b1) / feat.uvs[pair.first].size() * z);
         // Draw current point
         cv::Point2f pt_c(feat.uvs[pair.first].at(z)(0), feat.uvs[pair.first].at(z)(1));
-        cv::circle(img_temp, pt_c, (is_small) ? 1 : 2, cv::Scalar(color_r, color_g, color_b), cv::FILLED);
+        if(is_stereo)
+          cv::circle(img_temp, pt_c, (is_small) ? 1 : 2, cv::Scalar(color_r, color_g, color_b), cv::FILLED);
+        else
+          cv::circle(img_temp, pt_c, (is_small) ? 3 : 4, cv::Scalar(color_r, color_g, color_b), cv::FILLED);
+
         // If there is a next point, then display the line from this point to the next
         if (z + 1 < feat.uvs[pair.first].size()) {
           cv::Point2f pt_n(feat.uvs[pair.first].at(z + 1)(0), feat.uvs[pair.first].at(z + 1)(1));
@@ -204,8 +208,8 @@ void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2
         }
         // If the first point, display the ID
         if (z == feat.uvs[pair.first].size() - 1) {
-          // cv::putText(img_out0, std::to_string(feat->featid), pt_c, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1,
-          // cv::LINE_AA); cv::circle(img_out0, pt_c, 2, cv::Scalar(color,color,255), CV_FILLED);
+          // cv::putText(img_temp, std::to_string(feat.featid), pt_c, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1,
+          // cv::LINE_AA); cv::circle(img_temp, pt_c, 2, cv::Scalar(color_r,color_g,255), cv::FILLED);
         }
       }
     }
