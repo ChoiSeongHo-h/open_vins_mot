@@ -196,10 +196,12 @@ void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2
         int color_b = (is_stereo ? g2 : b2) - (int)(1.0 * (is_stereo ? g1 : b1) / feat.uvs[pair.first].size() * z);
         // Draw current point
         cv::Point2f pt_c(feat.uvs[pair.first].at(z)(0), feat.uvs[pair.first].at(z)(1));
-        if(is_stereo)
+        if (is_stereo) {
           cv::circle(img_temp, pt_c, (is_small) ? 1 : 2, cv::Scalar(color_r, color_g, color_b), cv::FILLED);
-        else
+        }
+        else {
           cv::circle(img_temp, pt_c, (is_small) ? 3 : 4, cv::Scalar(color_r, color_g, color_b), cv::FILLED);
+        }
 
         // If there is a next point, then display the line from this point to the next
         if (z + 1 < feat.uvs[pair.first].size()) {

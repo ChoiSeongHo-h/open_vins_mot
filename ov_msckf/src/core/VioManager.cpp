@@ -267,8 +267,21 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     message.masks.at(i) = mask_temp;
   }
 
+
   // Perform our feature tracking!
-  trackFEATS->feed_new_camera(message);
+  if (params.use_stereo) {
+    auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
+    auto R_ItoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
+    auto p_IinC0 = state->_calib_IMUtoCAM[0]->pos();
+    auto p_IinC1 = state->_calib_IMUtoCAM[1]->pos();
+    auto R_C1toC0 = R_ItoC1.transpose() * R_ItoC0;
+    auto p_C0inC1 = - R_C1toC0 * p_IinC0 + p_IinC1;
+
+    trackFEATS->feed_new_camera(message, R_C1toC0, p_C0inC1);
+  }
+  else {
+    trackFEATS->feed_new_camera(message);
+  }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids

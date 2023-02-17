@@ -28,10 +28,12 @@
 #include "feat/FeatureDatabase.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
+#include "utils/quat_ops.h"
+#include <opencv2/core/eigen.hpp>
 
 using namespace ov_core;
 
-void TrackKLT::feed_new_camera(const CameraData &message) {
+void TrackKLT::feed_new_camera(const CameraData &message, const Eigen::Matrix<double, 3, 3> R_C1toC0, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
   if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {
@@ -80,7 +82,7 @@ void TrackKLT::feed_new_camera(const CameraData &message) {
   if (num_images == 1) {
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
-    feed_stereo(message, 0, 1);
+    feed_stereo(message, 0, 1, R_C1toC0, p_C0inC1);
   } else if (!use_stereo) {
     parallel_for_(cv::Range(0, (int)num_images), LambdaBody([&](const cv::Range &range) {
                     for (int i = range.start; i < range.end; i++) {
@@ -199,7 +201,7 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
-void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right) {
+void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
 
   // Lock this data feed for this camera
   size_t cam_id_left = message.sensor_ids.at(msg_id_left);
@@ -223,7 +225,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
     std::vector<cv::KeyPoint> good_left, good_right;
     std::vector<size_t> good_ids_left, good_ids_right;
     perform_detection_stereo(imgpyr_left, imgpyr_right, mask_left, mask_right, cam_id_left, cam_id_right, good_left, good_right,
-                             good_ids_left, good_ids_right);
+                             good_ids_left, good_ids_right, R_C1toC0, p_C0inC1);
     // Save the current image and pyramid
     std::lock_guard<std::mutex> lckv(mtx_last_vars);
     img_last[cam_id_left] = img_left;
@@ -248,7 +250,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   auto ids_right_old = ids_last[cam_id_right];
   perform_detection_stereo(img_pyramid_last[cam_id_left], img_pyramid_last[cam_id_right], img_mask_last[cam_id_left],
                            img_mask_last[cam_id_right], cam_id_left, cam_id_right, pts_left_old, pts_right_old, ids_left_old,
-                           ids_right_old);
+                           ids_right_old, R_C1toC0, p_C0inC1);
   rT3 = boost::posix_time::microsec_clock::local_time();
 
   // Our return success masks, and predicted new features
@@ -529,7 +531,7 @@ void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, 
 
 void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, const cv::Mat &mask0,
                                         const cv::Mat &mask1, size_t cam_id_left, size_t cam_id_right, std::vector<cv::KeyPoint> &pts0,
-                                        std::vector<cv::KeyPoint> &pts1, std::vector<size_t> &ids0, std::vector<size_t> &ids1) {
+                                        std::vector<cv::KeyPoint> &pts1, std::vector<size_t> &ids0, std::vector<size_t> &ids1, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
 
   // Create a 2D occupancy grid for this current image
   // Note that we scale this down, so that each grid point is equal to a set of pixels
@@ -671,6 +673,40 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
       cv::calcOpticalFlowPyrLK(img0pyr, img1pyr, pts0_new, pts1_new, mask, error, win_size, pyr_levels, term_crit,
                                cv::OPTFLOW_USE_INITIAL_FLOW);
 
+      // Verify the optical flow using stereo extrinsics.
+      // normalized undistorted points
+      std::vector<cv::Point2f> upts0_new, upts1_new;
+      Eigen::Matrix<double, 3, 3> E_temp = skew_x(p_C0inC1)*R_C1toC0;
+      cv::Mat F;
+      // essential matrix is fundamental matrix of normalized points
+      cv::eigen2cv(E_temp, F);
+
+      cv::undistortPoints(pts0_new, upts0_new, camera_calib.at(0)->get_K(), camera_calib.at(0)->get_D());
+      cv::undistortPoints(pts1_new, upts1_new, camera_calib.at(1)->get_K(), camera_calib.at(1)->get_D());
+
+      std::vector<cv::Vec3f> epipolar_lines;
+      computeCorrespondEpilines(upts0_new, 0 + 1, F, epipolar_lines);
+
+      cv :: Mat K1(camera_calib.at(1)->get_K());
+      double fy = K1.at<double>(1, 1);
+      for (size_t i = 0; i < pts0_new.size(); i++)
+      {
+        if (mask[i] == 0) {
+          continue;
+        }
+
+        // given equation of line : ax + by + c = 0
+        double a = epipolar_lines[i][0];
+        double b = epipolar_lines[i][1];
+        double c = epipolar_lines[i][2];
+        double distance = abs(a*upts1_new[i].x + b*upts1_new[i].y + c) / sqrt(pow(a, 2) + pow(b, 2));
+        // In the stereo case, the epipolar lines are typically horizontal, with distance only present in the vertical direction.
+        // Since the image is scaled down vertically by `fy`, the threshold is also scaled down by `fy`.
+        if (distance > 10/fy) {
+          mask[i] = 0;
+        }
+      }
+      
       // Loop through and record only ones that are valid
       for (size_t i = 0; i < pts0_new.size(); i++) {
 

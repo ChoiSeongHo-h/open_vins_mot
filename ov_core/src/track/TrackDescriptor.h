@@ -59,7 +59,7 @@ public:
    * @brief Process a new image
    * @param message Contains our timestamp, images, and camera ids
    */
-  void feed_new_camera(const CameraData &message) override;
+  void feed_new_camera(const CameraData &message, const Eigen::Matrix<double, 3, 3> R_C1toC0 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
 
 protected:
   /**
