@@ -304,6 +304,13 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   std::vector<cv::KeyPoint> good_left, good_right;
   std::vector<size_t> good_ids_left, good_ids_right;
 
+  // for verify the optical flow using stereo extrinsics.
+  Eigen::Matrix<double, 3, 3> E_temp = skew_x(p_C0inC1)*R_C1toC0;
+  cv::Mat F;
+  // essential matrix is fundamental matrix of normalized points
+  cv::eigen2cv(E_temp, F);
+  cv :: Mat K1(camera_calib.at(1)->get_K());
+  double fy = K1.at<double>(1, 1);
   // Loop through all left points
   for (size_t i = 0; i < pts_left_new.size(); i++) {
     // Ensure we do not have any bad KLT tracks (i.e., points are negative)
@@ -327,10 +334,31 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
       if (pts_right_new.at(index_right).pt.x < 0 || pts_right_new.at(index_right).pt.y < 0 ||
           (int)pts_right_new.at(index_right).pt.x >= img_right.cols || (int)pts_right_new.at(index_right).pt.y >= img_right.rows)
         continue;
+
+    // normalized undistorted points
+    cv::Point2f upt_left_new = camera_calib.at(cam_id_left)->undistort_cv(pts_left_new.at(i).pt);
+    cv::Point2f upt_right_new = camera_calib.at(cam_id_right)->undistort_cv(pts_right_new.at(index_right).pt);
+
+    std::vector<cv::Vec3f> epipolar_lines;
+    computeCorrespondEpilines(std::vector<cv::Point2f>{upt_left_new}, 0 + 1, F, epipolar_lines);
+
+    // given equation of line : ax + by + c = 0
+    double a = epipolar_lines[0][0];
+    double b = epipolar_lines[0][1];
+    double c = epipolar_lines[0][2];
+    double distance = abs(a*upt_right_new.x + b*upt_right_new.y + c) / sqrt(pow(a, 2) + pow(b, 2));
+    // In the stereo case, the epipolar lines are typically horizontal, with distance only present in the vertical direction.
+    // Since the image is scaled down vertically by `fy`, the threshold is also scaled down by `fy`.
+    if (distance > 10/fy) {
+      good_left.push_back(pts_left_new.at(i));
+      good_ids_left.push_back(ids_left_old.at(i));
+    }
+    else {
       good_left.push_back(pts_left_new.at(i));
       good_right.push_back(pts_right_new.at(index_right));
       good_ids_left.push_back(ids_left_old.at(i));
       good_ids_right.push_back(ids_right_old.at(index_right));
+    }
       // PRINT_DEBUG("adding to stereo - %u , %u\n", ids_left_old.at(i), ids_right_old.at(index_right));
     } else if (mask_ll[i]) {
       good_left.push_back(pts_left_new.at(i));
