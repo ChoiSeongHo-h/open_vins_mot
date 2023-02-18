@@ -268,18 +268,23 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   }
 
 
+  // auto R_GtoI_before = Eigen::Matrix3d(state->_imu->Rot());
+  // auto p_IinG_before = Eigen::Vector3d(state->_imu->pos());
+  auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
+  auto R_ItoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
+  auto p_IinC0 = state->_calib_IMUtoCAM[0]->pos();
+  auto p_IinC1 = state->_calib_IMUtoCAM[1]->pos();
+  // std::vector<std::vector<cv::Point2f>> dynamic_pts_C0;
+  // std::vector<std::vector<cv::Point2f>> dynamic_pts_C1;
   // Perform our feature tracking!
   if (params.use_stereo) {
-    auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
-    auto R_ItoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
-    auto p_IinC0 = state->_calib_IMUtoCAM[0]->pos();
-    auto p_IinC1 = state->_calib_IMUtoCAM[1]->pos();
     auto R_C1toC0 = R_ItoC1.transpose() * R_ItoC0;
     auto p_C0inC1 = - R_C1toC0 * p_IinC0 + p_IinC1;
-
+    // trackFEATS->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1, R_C1toC0, p_C0inC1);
     trackFEATS->feed_new_camera(message, R_C1toC0, p_C0inC1);
   }
   else {
+    // trackFEATS->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
     trackFEATS->feed_new_camera(message);
   }
 
@@ -287,6 +292,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
+    // trackARUCO->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
     trackARUCO->feed_new_camera(message);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
@@ -320,6 +326,38 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
 
   // Call on our propagate and update function
   do_feature_propagate_update(message);
+
+  // auto R_GtoI_after = Eigen::Matrix3d(state->_imu->Rot());
+  // auto p_IinG_after = Eigen::Vector3d(state->_imu->pos());
+  // Eigen::Matrix3d R_C0toG_before = (R_GtoI_before * R_ItoC0).transpose();
+  // Eigen::Matrix3d R_C0toG_after = (R_GtoI_after * R_ItoC0).transpose();
+  // Eigen::Matrix3d R_C1toG_before = (R_GtoI_before * R_ItoC1).transpose();
+  // Eigen::Matrix3d R_C1toG_after = (R_GtoI_after * R_ItoC1).transpose();
+  // Eigen::Vector3d p_GinC0_before = p_IinC0 - R_C0toG_before * p_IinG_before;
+  // Eigen::Vector3d p_GinC0_after = p_IinC0 - R_C0toG_after * p_IinG_after;
+  // Eigen::Vector3d p_GinC1_before = p_IinC1 - R_C1toG_before * p_IinG_before;
+  // Eigen::Vector3d p_GinC1_after = p_IinC1 - R_C1toG_after * p_IinG_after;
+  // Eigen::Matrix<double, 3, 4> P_C0_before_temp;
+  // P_C0_before_temp << R_C0toG_before, p_GinC0_before;
+  // Eigen::Matrix<double, 3, 4> P_C0_after_temp;
+  // P_C0_after_temp << R_C0toG_after, p_GinC0_after;
+  // Eigen::Matrix<double, 3, 4> P_C1_before_temp;
+  // P_C1_before_temp << R_C1toG_before, p_GinC1_before;
+  // Eigen::Matrix<double, 3, 4> P_C1_after_temp;
+  // P_C1_after_temp << R_C1toG_after, p_GinC1_after;
+  // cv::Mat P_C0_before;
+  // cv::Mat P_C0_after;
+  // cv::Mat P_C1_before;
+  // cv::Mat P_C1_after;
+  // cv::eigen2cv(P_C0_before_temp, P_C0_before);
+  // cv::eigen2cv(P_C0_after_temp, P_C0_after);
+  // cv::eigen2cv(P_C1_before_temp, P_C1_before);
+  // cv::eigen2cv(P_C1_after_temp, P_C1_after);
+  // cv::Mat pts3d_before;
+  // cv::Mat pts3d_after;
+  // cv::triangulatePoints(P_C0_before, P_C1_before, dynamic_pts_C0[0], dynamic_pts_C1[0], pts3d_before);
+  // cv::triangulatePoints(P_C0_after, P_C1_after, dynamic_pts_C0[1], dynamic_pts_C1[1], pts3d_after);
+  // std::cout<<pts3d_before<<std::endl<<pts3d_after<<std::endl;
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {

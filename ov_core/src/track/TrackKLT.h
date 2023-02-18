@@ -23,6 +23,7 @@
 #define OV_CORE_TRACK_KLT_H
 
 #include "TrackBase.h"
+#include <opencv2/core/eigen.hpp>
 
 namespace ov_core {
 
@@ -60,6 +61,7 @@ public:
    * @brief Process a new image
    * @param message Contains our timestamp, images, and camera ids
    */
+  // void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1, const Eigen::Matrix<double, 3, 3> R_C1toC0 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
   void feed_new_camera(const CameraData &message, const Eigen::Matrix<double, 3, 3> R_C1toC0 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
 
 protected:
@@ -76,6 +78,7 @@ protected:
    * @param msg_id_left first image index in message data vector
    * @param msg_id_right second image index in message data vector
    */
+  // void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1);
   void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
 
   /**
@@ -129,7 +132,7 @@ protected:
    * If the second vector is non-empty, it will be used as an initial guess of where the keypoints are in the second image.
    */
   void perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &pts0,
-                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out);
+                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out0, std::vector<uchar> &mask_out1);
 
   // Parameters for our FAST grid detector
   int threshold;

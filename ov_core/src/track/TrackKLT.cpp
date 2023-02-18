@@ -29,10 +29,10 @@
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
 #include "utils/quat_ops.h"
-#include <opencv2/core/eigen.hpp>
 
 using namespace ov_core;
 
+// void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1, const Eigen::Matrix<double, 3, 3> R_C1toC0, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 void TrackKLT::feed_new_camera(const CameraData &message, const Eigen::Matrix<double, 3, 3> R_C1toC0, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
@@ -82,6 +82,7 @@ void TrackKLT::feed_new_camera(const CameraData &message, const Eigen::Matrix<do
   if (num_images == 1) {
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
+    // feed_stereo(message, 0, 1, R_C1toC0, p_C0inC1, dynamic_pts_C0, dynamic_pts_C1);
     feed_stereo(message, 0, 1, R_C1toC0, p_C0inC1);
   } else if (!use_stereo) {
     parallel_for_(cv::Range(0, (int)num_images), LambdaBody([&](const cv::Range &range) {
@@ -134,10 +135,11 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
 
   // Our return success masks, and predicted new features
   std::vector<uchar> mask_ll;
+  std::vector<uchar> mask_rsc;
   std::vector<cv::KeyPoint> pts_left_new = pts_left_old;
 
   // Lets track temporally
-  perform_matching(img_pyramid_last[cam_id], imgpyr, pts_left_old, pts_left_new, cam_id, cam_id, mask_ll);
+  perform_matching(img_pyramid_last[cam_id], imgpyr, pts_left_old, pts_left_new, cam_id, cam_id, mask_ll, mask_rsc);
   assert(pts_left_new.size() == ids_left_old.size());
   rT4 = boost::posix_time::microsec_clock::local_time();
 
@@ -201,6 +203,7 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
+// void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1) {
 void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, const Eigen::Matrix<double, 3, 3> &R_C1toC0, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
 
   // Lock this data feed for this camera
@@ -254,7 +257,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   rT3 = boost::posix_time::microsec_clock::local_time();
 
   // Our return success masks, and predicted new features
-  std::vector<uchar> mask_ll, mask_rr;
+  std::vector<uchar> mask_ll, mask_rr, mask_ll_klt, mask_rr_klt;
   std::vector<cv::KeyPoint> pts_left_new = pts_left_old;
   std::vector<cv::KeyPoint> pts_right_new = pts_right_old;
 
@@ -265,7 +268,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
                     perform_matching(img_pyramid_last[is_left ? cam_id_left : cam_id_right], is_left ? imgpyr_left : imgpyr_right,
                                      is_left ? pts_left_old : pts_right_old, is_left ? pts_left_new : pts_right_new,
                                      is_left ? cam_id_left : cam_id_right, is_left ? cam_id_left : cam_id_right,
-                                     is_left ? mask_ll : mask_rr);
+                                     is_left ? mask_ll : mask_rr, is_left ? mask_ll_klt : mask_rr_klt);
                   }
                 }));
   rT4 = boost::posix_time::microsec_clock::local_time();
@@ -304,6 +307,27 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   std::vector<cv::KeyPoint> good_left, good_right;
   std::vector<size_t> good_ids_left, good_ids_right;
 
+
+  
+cv::Mat test_l;
+cv::cvtColor(imgpyr_left[0], test_l, cv::COLOR_GRAY2RGB);
+for(int i = 0; i<pts_left_new.size(); ++i)
+{
+  if(mask_ll[i] == 1)
+   cv::circle(test_l, pts_left_new[i].pt, 3, cv::Scalar(0,255,0), 3);
+}  
+cv::Mat test_r;
+cv::cvtColor(imgpyr_right[0], test_r, cv::COLOR_GRAY2RGB);
+for(int i = 0; i<pts_right_new.size(); ++i)
+{
+  if(mask_rr[i] == 1)
+    cv::circle(test_r, pts_right_new[i].pt, 3, cv::Scalar(0,255,0), 3);
+}
+
+
+
+
+
   // for verify the optical flow using stereo extrinsics.
   Eigen::Matrix<double, 3, 3> E_temp = skew_x(p_C0inC1)*R_C1toC0;
   cv::Mat F;
@@ -329,36 +353,55 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
     }
     // If it is a good track, and also tracked from left to right
     // Else track it as a mono feature in just the left image
-    if (mask_ll[i] && found_right && mask_rr[index_right]) {
+    if (found_right) {
       // Ensure we do not have any bad KLT tracks (i.e., points are negative)
       if (pts_right_new.at(index_right).pt.x < 0 || pts_right_new.at(index_right).pt.y < 0 ||
-          (int)pts_right_new.at(index_right).pt.x >= img_right.cols || (int)pts_right_new.at(index_right).pt.y >= img_right.rows)
+          (int)pts_right_new.at(index_right).pt.x >= img_right.cols || (int)pts_right_new.at(index_right).pt.y >= img_right.rows ||
+          (mask_ll[i] == 0 && mask_rr[index_right] == 0))
         continue;
 
-    // normalized undistorted points
-    cv::Point2f upt_left_new = camera_calib.at(cam_id_left)->undistort_cv(pts_left_new.at(i).pt);
-    cv::Point2f upt_right_new = camera_calib.at(cam_id_right)->undistort_cv(pts_right_new.at(index_right).pt);
+      // normalized undistorted points
+      cv::Point2f upt_left_new = camera_calib.at(cam_id_left)->undistort_cv(pts_left_new.at(i).pt);
+      cv::Point2f upt_right_new = camera_calib.at(cam_id_right)->undistort_cv(pts_right_new.at(index_right).pt);
 
-    std::vector<cv::Vec3f> epipolar_lines;
-    computeCorrespondEpilines(std::vector<cv::Point2f>{upt_left_new}, 0 + 1, F, epipolar_lines);
+      std::vector<cv::Vec3f> epipolar_lines;
+      computeCorrespondEpilines(std::vector<cv::Point2f>{upt_left_new}, 0 + 1, F, epipolar_lines);
 
-    // given equation of line : ax + by + c = 0
-    double a = epipolar_lines[0][0];
-    double b = epipolar_lines[0][1];
-    double c = epipolar_lines[0][2];
-    double distance = abs(a*upt_right_new.x + b*upt_right_new.y + c) / sqrt(pow(a, 2) + pow(b, 2));
-    // In the stereo case, the epipolar lines are typically horizontal, with distance only present in the vertical direction.
-    // Since the image is scaled down vertically by `fy`, the threshold is also scaled down by `fy`.
-    if (distance > 10/fy) {
-      good_left.push_back(pts_left_new.at(i));
-      good_ids_left.push_back(ids_left_old.at(i));
-    }
-    else {
-      good_left.push_back(pts_left_new.at(i));
-      good_right.push_back(pts_right_new.at(index_right));
-      good_ids_left.push_back(ids_left_old.at(i));
-      good_ids_right.push_back(ids_right_old.at(index_right));
-    }
+      // given equation of line : ax + by + c = 0
+      double a = epipolar_lines[0][0];
+      double b = epipolar_lines[0][1];
+      double c = epipolar_lines[0][2];
+      double distance = abs(a*upt_right_new.x + b*upt_right_new.y + c) / sqrt(pow(a, 2) + pow(b, 2));
+      // passed RANSAC and KLT
+      if (mask_ll[i] && mask_rr[index_right]) {
+        // In the stereo case, the epipolar lines are typically horizontal, with distance only present in the vertical direction.
+        // Since the image is scaled down vertically by `fy`, the threshold is also scaled down by `fy`.
+        if (distance > 10/fy) {
+          good_left.push_back(pts_left_new.at(i));
+          good_ids_left.push_back(ids_left_old.at(i));
+        }
+        else {
+          good_left.push_back(pts_left_new.at(i));
+          good_right.push_back(pts_right_new.at(index_right));
+          good_ids_left.push_back(ids_left_old.at(i));
+          good_ids_right.push_back(ids_right_old.at(index_right));
+        }
+      }
+      // passed KLT only
+      else if (mask_ll_klt[i] != 0 && mask_rr_klt[i] != 0) {
+        if (distance < 10/fy) {
+            cv::Point2f upt_left_old = camera_calib.at(cam_id_left)->undistort_cv(pts_left_old.at(i).pt);
+            cv::Point2f upt_right_old = camera_calib.at(cam_id_right)->undistort_cv(pts_right_old.at(index_right).pt);
+            // dynamic_pts_C0[0].emplace_back(upt_left_old);
+            // dynamic_pts_C0[1].emplace_back(upt_left_new);
+            // dynamic_pts_C1[0].emplace_back(upt_right_old);
+            // dynamic_pts_C1[1].emplace_back(upt_right_new);
+cv::circle(test_l, pts_left_new[i].pt, 3, cv::Scalar(0,0,255), 3);
+cv::circle(test_r, pts_right_new[index_right].pt, 3, cv::Scalar(0,0,255), 3);
+cv::arrowedLine(test_l, pts_left_old[i].pt, pts_left_new[i].pt, cv::Scalar(255,0,0), 3);
+cv::arrowedLine(test_r, pts_right_old[index_right].pt, pts_right_new[index_right].pt, cv::Scalar(255,0,0), 3);
+        }
+      }
       // PRINT_DEBUG("adding to stereo - %u , %u\n", ids_left_old.at(i), ids_right_old.at(index_right));
     } else if (mask_ll[i]) {
       good_left.push_back(pts_left_new.at(i));
@@ -366,6 +409,14 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
       // PRINT_DEBUG("adding to left - %u \n",ids_left_old.at(i));
     }
   }
+
+
+
+cv::Mat show;
+cv::vconcat(test_l, test_r, show);
+cv::imshow("test", show);
+cv::waitKey(1);
+
 
   // Loop through all right points
   for (size_t i = 0; i < pts_right_new.size(); i++) {
@@ -890,7 +941,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
 }
 
 void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &kpts0,
-                                std::vector<cv::KeyPoint> &kpts1, size_t id0, size_t id1, std::vector<uchar> &mask_out) {
+                                std::vector<cv::KeyPoint> &kpts1, size_t id0, size_t id1, std::vector<uchar> &mask_out0, std::vector<uchar> &mask_out1) {
 
   // We must have equal vectors
   assert(kpts0.size() == kpts1.size());
@@ -910,7 +961,7 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
   // We set the mask to be all zeros since all points failed RANSAC
   if (pts0.size() < 10) {
     for (size_t i = 0; i < pts0.size(); i++)
-      mask_out.push_back((uchar)0);
+      mask_out0.push_back((uchar)0);
     return;
   }
 
@@ -933,12 +984,13 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
   double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
   double max_focallength_img1 = std::max(camera_calib.at(id1)->get_K()(0, 0), camera_calib.at(id1)->get_K()(1, 1));
   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
-  cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 2.0 / max_focallength, 0.999, mask_rsc);
+  cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 0.5 / max_focallength, 0.999, mask_rsc);
 
   // Loop through and record only ones that are valid
   for (size_t i = 0; i < mask_klt.size(); i++) {
     auto mask = (uchar)((i < mask_klt.size() && mask_klt[i] && i < mask_rsc.size() && mask_rsc[i]) ? 1 : 0);
-    mask_out.push_back(mask);
+    mask_out0.push_back(mask);
+    mask_out1.push_back(mask_klt[i]);
   }
 
   // Copy back the updated positions

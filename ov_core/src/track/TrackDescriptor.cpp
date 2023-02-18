@@ -30,6 +30,7 @@
 
 using namespace ov_core;
 
+// void TrackDescriptor::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1, const Eigen::Matrix<double, 3, 3> R_C1toC0, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 void TrackDescriptor::feed_new_camera(const CameraData &message, const Eigen::Matrix<double, 3, 3> R_C1toC0, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
