@@ -194,9 +194,8 @@ int main(int argc, char **argv) {
     message.sensor_ids.push_back(0);
     message.images.push_back(frame);
     message.masks.push_back(cv::Mat::zeros(cv::Size(frame.cols, frame.rows), CV_8UC1));
-    // std::vector<std::vector<cv::Point2f>> dynamic_pts_C0, dynamic_pts_C1;
-    // extractor->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
-    extractor->feed_new_camera(message);
+    std::vector<std::vector<cv::Point2f>> dynamic_pts_C0, dynamic_pts_C1;
+    extractor->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
 
     // Display the resulting tracks
     cv::Mat img_active, img_history;
