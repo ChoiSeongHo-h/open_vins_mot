@@ -35,6 +35,8 @@
     <depend condition="$ROS_VERSION == 1">cv_bridge</depend>
     <depend condition="$ROS_VERSION == 1">ov_core</depend>
     <depend condition="$ROS_VERSION == 1">ov_init</depend>
+    <depend condition="$ROS_VERSION == 1">pcl_conversions</depend>
+    <depend condition="$ROS_VERSION == 1">pcl_ros</depend>
 
     <!-- ROS2: Dependencies needed to compile this package. -->
     <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake</buildtool_depend>

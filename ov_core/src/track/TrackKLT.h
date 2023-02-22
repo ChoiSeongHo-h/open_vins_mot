@@ -61,7 +61,7 @@ public:
    * @brief Process a new image
    * @param message Contains our timestamp, images, and camera ids
    */
-  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
+  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
 
 protected:
   /**
@@ -77,7 +77,7 @@ protected:
    * @param msg_id_left first image index in message data vector
    * @param msg_id_right second image index in message data vector
    */
-  void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C0, std::vector<std::vector<cv::Point2f>> &dynamic_pts_C1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
+  void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
 
   /**
    * @brief Detects new features in the current image

@@ -43,6 +43,12 @@
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
 
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_types.h>
+#include <pcl/PCLPointCloud2.h>
+#include <pcl/conversions.h>
+#include <pcl/kdtree/kdtree_flann.h>
+
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
@@ -274,23 +280,23 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   auto R_IBtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
   auto p_IBinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
   auto p_IBinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
-  std::vector<std::vector<cv::Point2f>> dynamic_pts_C0(2);
-  std::vector<std::vector<cv::Point2f>> dynamic_pts_C1(2);
+  std::vector<std::vector<cv::Point2f>> ransac_denied_pts_C0(2);
+  std::vector<std::vector<cv::Point2f>> ransac_denied_pts_C1(2);
   // Perform our feature tracking!
   if (params.use_stereo) {
     auto R_C0toC1 = R_IBtoC1 * R_IBtoC0.transpose();
     auto p_C0inC1 = - R_C0toC1 * p_IBinC0 + p_IBinC1;
-    trackFEATS->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1, R_C0toC1, p_C0inC1);
+    trackFEATS->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1, R_C0toC1, p_C0inC1);
   }
   else {
-    trackFEATS->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
+    trackFEATS->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1);
   }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message, dynamic_pts_C0, dynamic_pts_C1);
+    trackARUCO->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -325,7 +331,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   do_feature_propagate_update(message);
 
   // select dynamic pts
-  if (dynamic_pts_C0[0].size() > 0) {
+  if (ransac_denied_pts_C0[0].size() > 0) {
     auto R_GtoIA = Eigen::Matrix3d(state->_imu->Rot());
     auto p_IAinG = Eigen::Vector3d(state->_imu->pos());
     auto R_IAtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
@@ -372,8 +378,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     cv::eigen2cv(P_C1A_temp, P_C1A);
     cv::Mat pts3d_before;
     cv::Mat pts3d_after;
-    cv::triangulatePoints(P_C0B, P_C1B, dynamic_pts_C0[0], dynamic_pts_C1[0], pts3d_before);
-    cv::triangulatePoints(P_C0A, P_C1A, dynamic_pts_C0[1], dynamic_pts_C1[1], pts3d_after);
+    cv::triangulatePoints(P_C0B, P_C1B, ransac_denied_pts_C0[0], ransac_denied_pts_C1[0], pts3d_before);
+    cv::triangulatePoints(P_C0A, P_C1A, ransac_denied_pts_C0[1], ransac_denied_pts_C1[1], pts3d_after);
 
     // Compute a prediction of the points for motion, assuming the received points are static
     cv::Mat T_BtoA;
@@ -392,20 +398,19 @@ cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
     // Receive an instruction that changes every time
     std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(0);
 
-    for(int i = 0; i<num_pts; ++i)
-    {
-auto lb = cv::Point2d(calib->value()(0)*(double)dynamic_pts_C0[0][i].x+calib->value()(2), calib->value()(1)*(double)dynamic_pts_C0[0][i].y+calib->value()(3));
-auto la = cv::Point2d(calib->value()(0)*(double)dynamic_pts_C0[1][i].x+calib->value()(2), calib->value()(1)*(double)dynamic_pts_C0[1][i].y+calib->value()(3));
-cv::circle(test_l, la, 3, cv::Scalar(0,0,255), 3);
-cv::arrowedLine(test_l, lb, la, cv::Scalar(255,0,0), 2);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    std::vector<cv::Point2d> dynamic_pts;
+    for(int i = 0; i<num_pts; ++i) {
+auto lb = cv::Point2d(calib->value()(0)*(double)ransac_denied_pts_C0[0][i].x+calib->value()(2), calib->value()(1)*(double)ransac_denied_pts_C0[0][i].y+calib->value()(3));
+auto la = cv::Point2d(calib->value()(0)*(double)ransac_denied_pts_C0[1][i].x+calib->value()(2), calib->value()(1)*(double)ransac_denied_pts_C0[1][i].y+calib->value()(3));
       // Predicted points in a Euclidean frame
       double x_predict = pts3d_predict.at<double>(0, i)/pts3d_predict.at<double>(3, i);
       double y_predict = pts3d_predict.at<double>(1, i)/pts3d_predict.at<double>(3, i);
       double z_predict = pts3d_predict.at<double>(2, i)/pts3d_predict.at<double>(3, i);
-auto lp = cv::Point2d(calib->value()(0)*x_predict/z_predict+calib->value()(2), calib->value()(1)*y_predict/z_predict+calib->value()(3));
-cv::circle(test_l, lp, 3, cv::Scalar(255,0,255), 3);
-cv::arrowedLine(test_l, lb, lp, cv::Scalar(255,0,0), 2);
-cv::circle(test_l, lb, 2, cv::Scalar(255,255,255), 2);
+// auto lp = cv::Point2d(calib->value()(0)*x_predict/z_predict+calib->value()(2), calib->value()(1)*y_predict/z_predict+calib->value()(3));
+// cv::circle(test_l, lp, 3, cv::Scalar(255,0,255), 3);
+// cv::arrowedLine(test_l, lb, lp, cv::Scalar(255,0,0), 2);
+// cv::circle(test_l, lb, 2, cv::Scalar(255,255,255), 2);
       // Observed points in a Euclidean frame
       double x_after = pts3d_after.at<double>(0, i)/pts3d_after.at<double>(3, i);
       double y_after = pts3d_after.at<double>(1, i)/pts3d_after.at<double>(3, i);
@@ -414,16 +419,115 @@ cv::circle(test_l, lb, 2, cv::Scalar(255,255,255), 2);
       // L2 in Euclidean with z-direction penalty
       double weighted_L2_3d = sqrt(pow(x_predict - x_after, 2) + pow(y_predict - y_after, 2) + (1/1.5) * pow(z_predict - z_after, 2));
       // reprojection error
-      double L2_2d = sqrt(pow(x_predict/z_predict - (double)dynamic_pts_C0[1][i].x, 2) + pow(y_predict/z_predict - (double)dynamic_pts_C0[1][i].y, 2));
+      double L2_2d = sqrt(pow(x_predict/z_predict - (double)ransac_denied_pts_C0[1][i].x, 2) + pow(y_predict/z_predict - (double)ransac_denied_pts_C0[1][i].y, 2));
 #include <string>
+      // Insert dynamic points into a point cloud
       if (z_predict < 50 && z_after < 50 && 0.5 < weighted_L2_3d && weighted_L2_3d < 100 && 15/calib->value()(0) < L2_2d) {
-cv::putText(test_l, std::to_string(weighted_L2_3d)+"m", la, 1, 1, cv::Scalar(0,255,0));
-cv::putText(test_l, std::to_string(L2_2d * calib->value()(0))+"px", cv::Point2d(la.x, la.y+10), 1, 1, cv::Scalar(0,255,0));
+// cv::putText(test_l, std::to_string(weighted_L2_3d)+"m", la, 1, 1, cv::Scalar(0,255,0));
+// cv::putText(test_l, std::to_string(L2_2d * calib->value()(0))+"px", cv::Point2d(la.x, la.y+10), 1, 1, cv::Scalar(0,255,0));
+        point_cloud->emplace_back(pcl::PointXYZ{(float)x_after, (float)y_after, (float)z_after});
+        dynamic_pts.emplace_back(cv::Point2d((double)ransac_denied_pts_C0[1][i].x, (double)ransac_denied_pts_C0[1][i].y));
+cv::circle(test_l, la, 3, cv::Scalar(255,255,255), 3);
+cv::arrowedLine(test_l, lb, la, cv::Scalar(255,0,0), 2);
+cv::putText(test_l, std::to_string(dynamic_pts.size()-1), la, 1, 2, cv::Scalar(255,0,0), 2);
       }
       else {
-cv::putText(test_l, std::to_string(weighted_L2_3d)+"m", la, 1, 1, cv::Scalar(0,0,255));
-cv::putText(test_l, std::to_string(L2_2d * calib->value()(0))+"px", cv::Point2d(la.x, la.y+10), 1, 1, cv::Scalar(0,0,255));
+// cv::putText(test_l, std::to_string(weighted_L2_3d)+"m", la, 1, 1, cv::Scalar(0,0,255));
+// cv::putText(test_l, std::to_string(L2_2d * calib->value()(0))+"px", cv::Point2d(la.x, la.y+10), 1, 1, cv::Scalar(0,0,255));
       }
+    }
+
+    // Get k nearest points in the neighbourhood
+    int num_nearest = 3;
+    int num_dynamic_pts = point_cloud->size();
+    if (num_dynamic_pts > num_nearest) {
+      std::vector<std::vector<int>> dynamic_pts_graph(num_dynamic_pts);
+      pcl::KdTreeFLANN<pcl::PointXYZ> kd_tree;
+      kd_tree.setInputCloud(point_cloud);
+      for (int i = 0; i<num_dynamic_pts; ++i) {
+        pcl::PointXYZ query_point = point_cloud->at(i);
+
+        // Search for the k nearest neighbors to the query point
+        std::vector<int> indices(num_nearest+1);
+        std::vector<float> distances(num_nearest+1);
+        kd_tree.nearestKSearch(query_point, num_nearest+1, indices, distances);
+auto q = cv::Point2d(calib->value()(0)*dynamic_pts[i].x+calib->value()(2), calib->value()(1)*dynamic_pts[i].y+calib->value()(3));
+std::cout << "qyery  " << i << std::endl;
+        for (int j = 0; j<= num_nearest; ++j) {
+std::cout << "Index " << indices[j] << " with distance " << distances[j] << std::endl;
+          // Graph only points that are close in distance and not query points
+          if (distances[j] < 2.0 && indices[j] != i) {
+            dynamic_pts_graph[i].emplace_back(indices[j]);
+            dynamic_pts_graph[indices[j]].emplace_back(i);
+printf("%d -> %d\n", i, indices[j]);
+printf("%d -> %d\n", indices[j], i);
+// std::cout<< "pass " << calib->value()(0)*dynamic_pts[i].x+calib->value()(2) << " " << calib->value()(1)*dynamic_pts[i].y+calib->value()(3) << std::endl;
+auto a = cv::Point2d(calib->value()(0)*dynamic_pts[indices[j]].x+calib->value()(2), calib->value()(1)*dynamic_pts[indices[j]].y+calib->value()(3));
+cv::line(test_l, q, a, cv::Scalar(0, 0, 255), 1);
+          }
+        }
+      }
+
+for(int i = 0; i<dynamic_pts_graph.size(); ++i) {
+printf("%d : ", i);
+for(auto j : dynamic_pts_graph[i]) {
+printf("%d ", j);
+}
+std::cout<<std::endl;
+}
+
+      // DFS to bring all elements of a graph together and reject graphs with fewer nodes
+      std::vector<bool> emplaced(num_dynamic_pts, false);
+      std::vector<std::vector<int>> dynamic_pts_group(1);
+      for (int i = 0; i<num_dynamic_pts; ++i) {
+        if (dynamic_pts_graph[i].empty() || emplaced[i])
+          continue;
+// printf("start : %d\n", i);
+        int cnt = 0;
+        std::stack<int> s;
+        emplaced[i] = true;
+        s.emplace(i);
+        while (!s.empty()) {
+          int idx_now = s.top();
+          s.pop();
+
+// printf("visit : %d\n", idx_now);
+          ++cnt;
+          dynamic_pts_group.back().emplace_back(idx_now);
+          for (auto next_idx : dynamic_pts_graph[idx_now]) {
+            if (!emplaced[next_idx]) {
+// printf("emplace : %d\n", next_idx);
+              emplaced[next_idx] = true;
+              s.emplace(next_idx);
+            }
+          }
+        }
+
+        if (cnt < 3)
+          dynamic_pts_group.back().clear();
+        else
+          dynamic_pts_group.emplace_back(std::vector<int>{});
+      }
+      if (!dynamic_pts_group.empty() && dynamic_pts_group.back().empty())
+        dynamic_pts_group.pop_back();
+
+
+for(int i = 0; i<dynamic_pts_group.size(); ++i) {
+for(int j = 0; j <dynamic_pts_group[i].size(); ++j) {
+printf("%d ", dynamic_pts_group[i][j]);
+}
+std::cout<<std::endl;
+}
+for(int i = 0; i<dynamic_pts_group.size(); ++i) {
+for(int j = 0; j < dynamic_pts_group[i].size()-1; ++j) {
+for(int k = j+1; k<dynamic_pts_group[i].size(); ++k) {
+auto q = cv::Point2d(calib->value()(0)*dynamic_pts[dynamic_pts_group[i][j]].x+calib->value()(2), calib->value()(1)*dynamic_pts[dynamic_pts_group[i][j]].y+calib->value()(3));
+auto a = cv::Point2d(calib->value()(0)*dynamic_pts[dynamic_pts_group[i][k]].x+calib->value()(2), calib->value()(1)*dynamic_pts[dynamic_pts_group[i][k]].y+calib->value()(3));
+cv::line(test_l, q, a, cv::Scalar(0, 255, 0), 1);
+}
+}
+}
+
     }
 cv::imshow("test", test_l);
 cv::waitKey(1);
