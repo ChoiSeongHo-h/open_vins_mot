@@ -106,8 +106,8 @@ auto q = cv::Point2d(calib->value()(0)*dynamic_pts_viz[i].x+calib->value()(2), c
       if (distances[j] < 2.0 && (size_t)indices[j] != i) {
         dynamic_pts_graph[i].emplace_back((size_t)indices[j]);
         dynamic_pts_graph[indices[j]].emplace_back(i);
-printf("%d -> %d\n", i, indices[j]);
-printf("%d -> %d\n", indices[j], i);
+// printf("%d -> %d\n", i, indices[j]);
+// printf("%d -> %d\n", indices[j], i);
 auto a = cv::Point2d(calib->value()(0)*dynamic_pts_viz[indices[j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_viz[indices[j]].y+calib->value()(3));
 cv::line(test_l, q, a, cv::Scalar(0, 0, 255), 1);
       }
@@ -115,11 +115,11 @@ cv::line(test_l, q, a, cv::Scalar(0, 0, 255), 1);
   }
 }
 
-void reject_static_pts(const std::shared_ptr<Vec> &calib, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_after, const cv::Mat &pts3d_before, const cv::Mat &pts3d_after, const cv::Mat &pts3d_predict, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, cv::Mat &test_l, std::vector<cv::Point2d> &dynamic_pts_viz) {
+void reject_static_pts(const std::shared_ptr<Vec> &calib, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_after, const cv::Mat &pts3d_before, const cv::Mat &pts3d_after, const cv::Mat &pts3d_predict, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, cv::Mat &test_l, std::vector<cv::Point2d> &dynamic_pts_viz) {
   size_t num_pts = pts3d_before.cols;
   for(size_t i = 0; i<num_pts; ++i) {
-auto lb = cv::Point2d(calib->value()(0)*(double)ransac_denied_pts_C0[0][i].x+calib->value()(2), calib->value()(1)*(double)ransac_denied_pts_C0[0][i].y+calib->value()(3));
-auto la = cv::Point2d(calib->value()(0)*(double)ransac_denied_pts_C0[1][i].x+calib->value()(2), calib->value()(1)*(double)ransac_denied_pts_C0[1][i].y+calib->value()(3));
+auto lb = cv::Point2d(calib->value()(0)*(double)klt_passed_pts_C0[0][i].x+calib->value()(2), calib->value()(1)*(double)klt_passed_pts_C0[0][i].y+calib->value()(3));
+auto la = cv::Point2d(calib->value()(0)*(double)klt_passed_pts_C0[1][i].x+calib->value()(2), calib->value()(1)*(double)klt_passed_pts_C0[1][i].y+calib->value()(3));
     // Predicted points in a Euclidean frame
     double x_predict = pts3d_predict.at<double>(0, i)/pts3d_predict.at<double>(3, i);
     double y_predict = pts3d_predict.at<double>(1, i)/pts3d_predict.at<double>(3, i);
@@ -134,16 +134,16 @@ auto la = cv::Point2d(calib->value()(0)*(double)ransac_denied_pts_C0[1][i].x+cal
     double weighted_L2_3d = sqrt(pow(x_predict - x_after, 2) + pow(y_predict - y_after, 2) + (1/1.5) * pow(z_predict - z_after, 2));
 
     // reprojection error
-    double L2_2d = sqrt(pow(x_predict/z_predict - (double)ransac_denied_pts_C0[1][i].x, 2) + pow(y_predict/z_predict - (double)ransac_denied_pts_C0[1][i].y, 2));
+    double L2_2d = sqrt(pow(x_predict/z_predict - (double)klt_passed_pts_C0[1][i].x, 2) + pow(y_predict/z_predict - (double)klt_passed_pts_C0[1][i].y, 2));
 #include <string>
     // Insert dynamic points into a point cloud
-    if (z_predict < 50 && z_after < 50 && 0.5 < weighted_L2_3d && weighted_L2_3d < 100 && 15/calib->value()(0) < L2_2d) {
+    if (z_predict < 100 && z_after < 100 && weighted_L2_3d < 100 && 15/calib->value()(0) < L2_2d) {
       double x_before = pts3d_before.at<double>(0, i)/pts3d_before.at<double>(3, i);
       double y_before = pts3d_before.at<double>(1, i)/pts3d_before.at<double>(3, i);
       double z_before = pts3d_before.at<double>(2, i)/pts3d_before.at<double>(3, i);
       dynamic_pts_after->emplace_back(pcl::PointXYZ{(float)x_after, (float)y_after, (float)z_after});
       dynamic_pts_before->emplace_back(pcl::PointXYZ{(float)x_before, (float)y_before, (float)z_before});
-dynamic_pts_viz.emplace_back(cv::Point2d((double)ransac_denied_pts_C0[1][i].x, (double)ransac_denied_pts_C0[1][i].y));
+dynamic_pts_viz.emplace_back(cv::Point2d((double)klt_passed_pts_C0[1][i].x, (double)klt_passed_pts_C0[1][i].y));
 cv::circle(test_l, la, 3, cv::Scalar(255,255,255), 3);
 cv::arrowedLine(test_l, lb, la, cv::Scalar(255,0,0), 2);
 cv::putText(test_l, std::to_string(dynamic_pts_viz.size()-1), la, 1, 2, cv::Scalar(255,0,0), 2);
@@ -151,61 +151,61 @@ cv::putText(test_l, std::to_string(dynamic_pts_viz.size()-1), la, 1, 2, cv::Scal
   }
 }
 
-void get_measurement_and_prediction(const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, cv::Mat &pts3d_before, cv::Mat &pts3d_after, cv::Mat &pts3d_predict) {
-    auto R_GtoIA = Eigen::Matrix3d(state->_imu->Rot());
-    auto p_IAinG = Eigen::Vector3d(state->_imu->pos());
-    auto R_IAtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
-    auto R_IAtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
-    auto p_IAinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
-    auto p_IAinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
+void get_measurement_and_prediction(const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, cv::Mat &pts3d_before, cv::Mat &pts3d_after, cv::Mat &pts3d_predict) {
+  auto R_GtoIA = Eigen::Matrix3d(state->_imu->Rot());
+  auto p_IAinG = Eigen::Vector3d(state->_imu->pos());
+  auto R_IAtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
+  auto R_IAtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
+  auto p_IAinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
+  auto p_IAinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
 
-    // criteria point : {global}
-    Eigen::Matrix3d R_GtoC0B = R_IBtoC0 * R_GtoIB;
-    Eigen::Matrix3d R_GtoC0A = R_IAtoC0 * R_GtoIA;
-    Eigen::Matrix3d R_GtoC1B = R_IBtoC1 * R_GtoIB;
-    Eigen::Matrix3d R_GtoC1A = R_IAtoC1 * R_GtoIA;
-    Eigen::Vector3d p_GinC0B = p_IBinC0 - R_GtoC0B * p_IBinG;
-    Eigen::Vector3d p_GinC0A = p_IAinC0 - R_GtoC0A * p_IAinG;
-    Eigen::Vector3d p_GinC1B = p_IBinC1 - R_GtoC1B * p_IBinG;
-    Eigen::Vector3d p_GinC1A = p_IAinC1 - R_GtoC1A * p_IAinG;
+  // criteria point : {global}
+  Eigen::Matrix3d R_GtoC0B = R_IBtoC0 * R_GtoIB;
+  Eigen::Matrix3d R_GtoC0A = R_IAtoC0 * R_GtoIA;
+  Eigen::Matrix3d R_GtoC1B = R_IBtoC1 * R_GtoIB;
+  Eigen::Matrix3d R_GtoC1A = R_IAtoC1 * R_GtoIA;
+  Eigen::Vector3d p_GinC0B = p_IBinC0 - R_GtoC0B * p_IBinG;
+  Eigen::Vector3d p_GinC0A = p_IAinC0 - R_GtoC0A * p_IAinG;
+  Eigen::Vector3d p_GinC1B = p_IBinC1 - R_GtoC1B * p_IBinG;
+  Eigen::Vector3d p_GinC1A = p_IAinC1 - R_GtoC1A * p_IAinG;
 
-    // criteria point : {cam0} when (t-1)
-    Eigen::Matrix3d R_C0BtoCOB = Eigen::Matrix3d::Identity();
-    Eigen::Matrix3d R_C0BtoC0A = R_GtoC0A * R_GtoC0B.transpose();
-    Eigen::Matrix3d R_C0BtoC1B = R_GtoC1B * R_GtoC0B.transpose();
-    Eigen::Matrix3d R_C0BtoC1A = R_GtoC1A * R_GtoC0B.transpose();
-    Eigen::Vector3d p_C0BinC0B = Eigen::Vector3d::Zero();
-    Eigen::Vector3d p_C0BinC0A = p_GinC0A - R_C0BtoC0A * p_GinC0B;
-    Eigen::Vector3d p_C0BinC1B = p_GinC1B - R_C0BtoC1B * p_GinC0B;
-    Eigen::Vector3d p_C0BinC1A = p_GinC1A - R_C0BtoC1A * p_GinC0B;
+  // criteria point : {cam0} when (t-1)
+  Eigen::Matrix3d R_C0BtoCOB = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d R_C0BtoC0A = R_GtoC0A * R_GtoC0B.transpose();
+  Eigen::Matrix3d R_C0BtoC1B = R_GtoC1B * R_GtoC0B.transpose();
+  Eigen::Matrix3d R_C0BtoC1A = R_GtoC1A * R_GtoC0B.transpose();
+  Eigen::Vector3d p_C0BinC0B = Eigen::Vector3d::Zero();
+  Eigen::Vector3d p_C0BinC0A = p_GinC0A - R_C0BtoC0A * p_GinC0B;
+  Eigen::Vector3d p_C0BinC1B = p_GinC1B - R_C0BtoC1B * p_GinC0B;
+  Eigen::Vector3d p_C0BinC1A = p_GinC1A - R_C0BtoC1A * p_GinC0B;
 
-    //Since I've been passed normalized points, the projection matrix is an extrinsic
-    Eigen::Matrix<double, 3, 4> P_C0B_temp;
-    P_C0B_temp << R_C0BtoCOB, p_C0BinC0B;
-    Eigen::Matrix<double, 3, 4> P_C0A_temp;
-    P_C0A_temp << R_C0BtoC0A, p_C0BinC0A;
-    Eigen::Matrix<double, 3, 4> P_C1B_temp;
-    P_C1B_temp << R_C0BtoC1B, p_C0BinC1B;
-    Eigen::Matrix<double, 3, 4> P_C1A_temp;
-    P_C1A_temp << R_C0BtoC1A, p_C0BinC1A;
-    cv::Mat P_C0B;
-    cv::Mat P_C0A;
-    cv::Mat P_C1B;
-    cv::Mat P_C1A;
-    cv::eigen2cv(P_C0B_temp, P_C0B);
-    cv::eigen2cv(P_C0A_temp, P_C0A);
-    cv::eigen2cv(P_C1B_temp, P_C1B);
-    cv::eigen2cv(P_C1A_temp, P_C1A);
-    cv::triangulatePoints(P_C0B, P_C1B, ransac_denied_pts_C0[0], ransac_denied_pts_C1[0], pts3d_before);
-    cv::triangulatePoints(P_C0A, P_C1A, ransac_denied_pts_C0[1], ransac_denied_pts_C1[1], pts3d_after);
+  //Since I've been passed normalized points, the projection matrix is an extrinsic
+  Eigen::Matrix<double, 3, 4> P_C0B_temp;
+  P_C0B_temp << R_C0BtoCOB, p_C0BinC0B;
+  Eigen::Matrix<double, 3, 4> P_C0A_temp;
+  P_C0A_temp << R_C0BtoC0A, p_C0BinC0A;
+  Eigen::Matrix<double, 3, 4> P_C1B_temp;
+  P_C1B_temp << R_C0BtoC1B, p_C0BinC1B;
+  Eigen::Matrix<double, 3, 4> P_C1A_temp;
+  P_C1A_temp << R_C0BtoC1A, p_C0BinC1A;
+  cv::Mat P_C0B;
+  cv::Mat P_C0A;
+  cv::Mat P_C1B;
+  cv::Mat P_C1A;
+  cv::eigen2cv(P_C0B_temp, P_C0B);
+  cv::eigen2cv(P_C0A_temp, P_C0A);
+  cv::eigen2cv(P_C1B_temp, P_C1B);
+  cv::eigen2cv(P_C1A_temp, P_C1A);
+  cv::triangulatePoints(P_C0B, P_C1B, klt_passed_pts_C0[0], klt_passed_pts_C1[0], pts3d_before);
+  cv::triangulatePoints(P_C0A, P_C1A, klt_passed_pts_C0[1], klt_passed_pts_C1[1], pts3d_after);
 
-    // Compute a prediction of the points for motion, assuming the received points are static
-    cv::Mat T_BtoA;
-    cv::Mat T_bottom = (cv::Mat_<double>(1, 4) << 0.0, 0.0, 0.0, 1.0);
-    cv::vconcat(P_C0A, T_bottom, T_BtoA);
-    pts3d_before.convertTo(pts3d_before, CV_64F);
-    pts3d_after.convertTo(pts3d_after, CV_64F);
-    pts3d_predict = T_BtoA * pts3d_before;
+  // Compute a prediction of the points for motion, assuming the received points are static
+  cv::Mat T_BtoA;
+  cv::Mat T_bottom = (cv::Mat_<double>(1, 4) << 0.0, 0.0, 0.0, 1.0);
+  cv::vconcat(P_C0A, T_bottom, T_BtoA);
+  pts3d_before.convertTo(pts3d_before, CV_64F);
+  pts3d_after.convertTo(pts3d_after, CV_64F);
+  pts3d_predict = T_BtoA * pts3d_before;
 }
 
 Eigen::Matrix4f ransac_transformation(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
@@ -289,11 +289,11 @@ std::cout<<best_transformation<<std::endl;
   return best_transformation;
 }
 
-void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1) {
+void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1) {
 cv::Mat test_l;
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
 std::vector<cv::Point2d> dynamic_pts_viz;
-  if (ransac_denied_pts_C0[0].empty()) {
+  if (klt_passed_pts_C0[0].empty()) {
 cv::imshow("test", test_l);
 cv::waitKey(1);
     return;
@@ -302,7 +302,7 @@ cv::waitKey(1);
   cv::Mat pts3d_before;
   cv::Mat pts3d_after;
   cv::Mat pts3d_predict;
-  get_measurement_and_prediction(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1, pts3d_before, pts3d_after, pts3d_predict);
+  get_measurement_and_prediction(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1, pts3d_before, pts3d_after, pts3d_predict);
 
 
   // Receive an instruction that changes every time
@@ -310,7 +310,7 @@ cv::waitKey(1);
   // reject static pts, get only dynamic pts
   pcl::PointCloud<pcl::PointXYZ>::Ptr dynamic_pts_after(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ>::Ptr dynamic_pts_before(new pcl::PointCloud<pcl::PointXYZ>);
-  reject_static_pts(calib, dynamic_pts_before, dynamic_pts_after, pts3d_before, pts3d_after, pts3d_predict, ransac_denied_pts_C0, ransac_denied_pts_C1, test_l, dynamic_pts_viz);
+  reject_static_pts(calib, dynamic_pts_before, dynamic_pts_after, pts3d_before, pts3d_after, pts3d_predict, klt_passed_pts_C0, klt_passed_pts_C1, test_l, dynamic_pts_viz);
   
   // Get k nearest points in the neighbourhood
   size_t num_nearest = 3;
@@ -319,13 +319,13 @@ cv::waitKey(1);
     std::vector<std::vector<size_t>> dynamic_pts_graph(num_dynamic_pts);
     construct_dynamic_pts_graph(dynamic_pts_after, num_dynamic_pts, num_nearest, dynamic_pts_graph, test_l, calib, dynamic_pts_viz);
 
-for(int i = 0; i<dynamic_pts_graph.size(); ++i) {
-printf("%d : ", i);
-for(auto j : dynamic_pts_graph[i]) {
-printf("%d ", j);
-}
-std::cout<<std::endl;
-}
+// for(int i = 0; i<dynamic_pts_graph.size(); ++i) {
+// printf("%d : ", i);
+// for(auto j : dynamic_pts_graph[i]) {
+// printf("%d ", j);
+// }
+// std::cout<<std::endl;
+// }
 
     // DFS to bring all elements of a graph together and reject graphs with fewer nodes
     std::vector<std::vector<size_t>> dynamic_pts_indices_group(1);
@@ -340,11 +340,8 @@ std::cout<<std::endl;
 }
 for(int i = 0; i<dynamic_pts_indices_group.size(); ++i) {
 for(int j = 0; j < dynamic_pts_indices_group[i].size()-1; ++j) {
-for(int k = j+1; k<dynamic_pts_indices_group[i].size(); ++k) {
 auto q = cv::Point2d(calib->value()(0)*dynamic_pts_viz[dynamic_pts_indices_group[i][j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_viz[dynamic_pts_indices_group[i][j]].y+calib->value()(3));
-auto a = cv::Point2d(calib->value()(0)*dynamic_pts_viz[dynamic_pts_indices_group[i][k]].x+calib->value()(2), calib->value()(1)*dynamic_pts_viz[dynamic_pts_indices_group[i][k]].y+calib->value()(3));
-cv::line(test_l, q, a, cv::Scalar(0, 255, 0), 1);
-}
+cv::circle(test_l, q, 3, cv::Scalar(0,255,0), 3);
 }
 }
     int num_dynamic_groups = dynamic_pts_indices_group.size();
@@ -583,23 +580,23 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   auto R_IBtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
   auto p_IBinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
   auto p_IBinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
-  std::vector<std::vector<cv::Point2f>> ransac_denied_pts_C0(2);
-  std::vector<std::vector<cv::Point2f>> ransac_denied_pts_C1(2);
+  std::vector<std::vector<cv::Point2f>> klt_passed_pts_C0(2);
+  std::vector<std::vector<cv::Point2f>> klt_passed_pts_C1(2);
   // Perform our feature tracking!
   if (params.use_stereo) {
     auto R_C0toC1 = R_IBtoC1 * R_IBtoC0.transpose();
     auto p_C0inC1 = - R_C0toC1 * p_IBinC0 + p_IBinC1;
-    trackFEATS->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1, R_C0toC1, p_C0inC1);
+    trackFEATS->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1, R_C0toC1, p_C0inC1);
   }
   else {
-    trackFEATS->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1);
+    trackFEATS->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
   }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1);
+    trackARUCO->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -616,7 +613,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
 printf("mot from zupt\n");
-      track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1);
+      track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1);
       return;
     }
   }
@@ -637,7 +634,7 @@ printf("mot from zupt\n");
 
   // select dynamic pts
 printf("mot from normal\n");
-  track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1);
+  track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1);
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {

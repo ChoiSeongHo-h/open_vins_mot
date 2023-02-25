@@ -32,7 +32,7 @@
 
 using namespace ov_core;
 
-void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
+void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
   if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {
@@ -81,7 +81,7 @@ void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vecto
   if (num_images == 1) {
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
-    feed_stereo(message, 0, 1, ransac_denied_pts_C0, ransac_denied_pts_C1, R_C0toC1, p_C0inC1);
+    feed_stereo(message, 0, 1, klt_passed_pts_C0, klt_passed_pts_C1, R_C0toC1, p_C0inC1);
   } else if (!use_stereo) {
     parallel_for_(cv::Range(0, (int)num_images), LambdaBody([&](const cv::Range &range) {
                     for (int i = range.start; i < range.end; i++) {
@@ -201,7 +201,7 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
-void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
+void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
 
   // Lock this data feed for this camera
   size_t cam_id_left = message.sensor_ids.at(msg_id_left);
@@ -364,14 +364,14 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
         }
       }
       // passed KLT only
-      else if (mask_ll_klt[i] != 0 && mask_rr_klt[i] != 0) {
+      if (mask_ll_klt[i] != 0 && mask_rr_klt[i] != 0) {
         if (distance < 10/fy) {
-            cv::Point2f upt_left_old = camera_calib.at(cam_id_left)->undistort_cv(pts_left_old.at(i).pt);
-            cv::Point2f upt_right_old = camera_calib.at(cam_id_right)->undistort_cv(pts_right_old.at(index_right).pt);
-            ransac_denied_pts_C0[0].emplace_back(upt_left_old);
-            ransac_denied_pts_C0[1].emplace_back(upt_left_new);
-            ransac_denied_pts_C1[0].emplace_back(upt_right_old);
-            ransac_denied_pts_C1[1].emplace_back(upt_right_new);
+          cv::Point2f upt_left_old = camera_calib.at(cam_id_left)->undistort_cv(pts_left_old.at(i).pt);
+          cv::Point2f upt_right_old = camera_calib.at(cam_id_right)->undistort_cv(pts_right_old.at(index_right).pt);
+          klt_passed_pts_C0[0].emplace_back(upt_left_old);
+          klt_passed_pts_C0[1].emplace_back(upt_left_new);
+          klt_passed_pts_C1[0].emplace_back(upt_right_old);
+          klt_passed_pts_C1[1].emplace_back(upt_right_new);
         }
       }
       // PRINT_DEBUG("adding to stereo - %u , %u\n", ids_left_old.at(i), ids_right_old.at(index_right));
@@ -948,7 +948,7 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr, const std::
   double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0), camera_calib.at(id0)->get_K()(1, 1));
   double max_focallength_img1 = std::max(camera_calib.at(id1)->get_K()(0, 0), camera_calib.at(id1)->get_K()(1, 1));
   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
-  cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 0.5 / max_focallength, 0.999, mask_rsc);
+  cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 2.0 / max_focallength, 0.999, mask_rsc);
 
   // Loop through and record only ones that are valid
   for (size_t i = 0; i < mask_klt.size(); i++) {

@@ -194,8 +194,8 @@ int main(int argc, char **argv) {
     message.sensor_ids.push_back(0);
     message.images.push_back(frame);
     message.masks.push_back(cv::Mat::zeros(cv::Size(frame.cols, frame.rows), CV_8UC1));
-    std::vector<std::vector<cv::Point2f>> ransac_denied_pts_C0, ransac_denied_pts_C1;
-    extractor->feed_new_camera(message, ransac_denied_pts_C0, ransac_denied_pts_C1);
+    std::vector<std::vector<cv::Point2f>> klt_passed_pts_C0, klt_passed_pts_C1;
+    extractor->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
 
     // Display the resulting tracks
     cv::Mat img_active, img_history;
