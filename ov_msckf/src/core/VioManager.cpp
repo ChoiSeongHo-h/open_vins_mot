@@ -49,7 +49,6 @@
 #include <pcl/conversions.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/registration/transformation_estimation_svd.h>
-#include <random>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -291,14 +290,20 @@ std::cout<<best_transformation<<std::endl;
 }
 
 void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C0, const std::vector<std::vector<cv::Point2f>> &ransac_denied_pts_C1) {
+cv::Mat test_l;
+cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
+std::vector<cv::Point2d> dynamic_pts_viz;
+  if (ransac_denied_pts_C0[0].empty()) {
+cv::imshow("test", test_l);
+cv::waitKey(1);
+    return;
+  }
+
   cv::Mat pts3d_before;
   cv::Mat pts3d_after;
   cv::Mat pts3d_predict;
   get_measurement_and_prediction(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1, pts3d_before, pts3d_after, pts3d_predict);
 
-cv::Mat test_l;
-cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
-std::vector<cv::Point2d> dynamic_pts_viz;
 
   // Receive an instruction that changes every time
   std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(0);
@@ -610,6 +615,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       assert(state->_timestamp == message.timestamp);
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+printf("mot from zupt\n");
+      track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1);
       return;
     }
   }
@@ -629,9 +636,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   do_feature_propagate_update(message);
 
   // select dynamic pts
-  if (ransac_denied_pts_C0[0].size() > 0) {
-    track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1);
-  }
+printf("mot from normal\n");
+  track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, ransac_denied_pts_C0, ransac_denied_pts_C1);
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
