@@ -49,12 +49,26 @@
 #include <pcl/conversions.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/registration/transformation_estimation_svd.h>
+#include <random>
 
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
+int fact(int n) {
+  if (n==0)
+    return 1;
 
+  int res = 1;
+  for (int i = 2; i <= n; i++)
+    res = res * i;
+      
+  return res;
+}
+
+int nCr (int n, int r) {
+    return fact(n) / (fact(r) * fact(n - r));
+}
 
 void serialize_dynamic_pts_graph(std::vector<std::vector<size_t>> &dynamic_pts_graph, const size_t num_dynamic_pts, std::vector<std::vector<size_t>> &dynamic_pts_indices_group) {
   size_t min_num_pts_ransac = 3;
@@ -213,45 +227,41 @@ Eigen::Matrix4f ransac_transformation(const pcl::PointCloud<pcl::PointXYZ> &pts_
 
   // Initialize the RANSAC parameters
   const int k = 3; // Number of points to draw for each iteration
-  const int max_iterations = log(1 - probability) / log(1 - pow(1 - 0.3, k));
+  int max_iterations = log(1 - probability) / log(1 - pow(1 - 0.3, k));
+  max_iterations = std::min(max_iterations, nCr(indices.size(), k));
 printf("max_iterations %d :\n", max_iterations);
   int best_num_inliers = 0;
   Eigen::Matrix4f best_transformation;
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  
+  std::vector<int> res_idx(k);
+  std::vector<int> rnd_idx(k);
+  std::set<std::vector<int>> used;
+  std::vector<int> rnd_base(indices.size());
+  std::iota(rnd_base.begin(), rnd_base.end(), 0);
 
-  // Create a random number generator
-  // std::random_device rd;
-  // std::mt19937 gen(rd());
-  // std::uniform_int_distribution<int> distribution(0, indices.size() - 1);
-
-  std::vector<int> combination_mask(indices.size(), 0);
-  for (int i = 0; i < indices.size()-k; ++i) {
-    combination_mask[i] = 0;
-  }
-  for (int i = indices.size()-k; i < indices.size(); ++i) {
-    combination_mask[i] = 1;
-  }
-
-  int iteration = 0;
   // Iterate for a maximum number of iterations
-  do {
-
-    // Draw k random points from the indices
-    // std::vector<int> sample_indices(k);
-    // for (int i = 0; i < k; ++i) {
-    //     int index = distribution(gen);
-    //     sample_indices[i] = indices[index];
-    // }
+  for (int iter = 0; iter < max_iterations; iter++) {
+    std::shuffle(rnd_base.begin(), rnd_base.end(), gen);
+    for (int i = 0; i < k; ++i) {
+      rnd_idx[i] = indices[rnd_base[i]];
+    }
+    std::sort(rnd_idx.begin(), rnd_idx.end());
+    if (used.find(rnd_idx) != used.end()) {
+        --iter;
+printf("fail\n");
+        continue;
+    }
+    used.emplace(rnd_idx);
 printf("suggestion idcs \n");
     // Estimate the transformation using the k random points
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_before(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_after(new pcl::PointCloud<pcl::PointXYZ>);
-    for (int i = 0; i < indices.size(); ++i) {
-      if(combination_mask[i] == 0)
-        continue;
-
-printf("%d ", indices[i]);
-      sample_before->emplace_back(pts_before[indices[i]]);
-      sample_after->emplace_back(pts_after[indices[i]]);
+    for (int i = 0; i < k; ++i) {
+printf("%d ", rnd_idx[i]);
+      sample_before->emplace_back(pts_before[rnd_idx[i]]);
+      sample_after->emplace_back(pts_after[rnd_idx[i]]);
     }
 printf("\n");
     pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
@@ -260,7 +270,7 @@ printf("\n");
 
     // Evaluate the transformation using the available points
     int num_inliers = 0;
-    for (int i = 0; i < indices.size(); ++i) {
+    for (size_t i = 0; i < indices.size(); ++i) {
       pcl::PointXYZ transformed_point;
       transformed_point.getVector3fMap() = transformation.block<3, 3>(0, 0) * pts_before[indices[i]].getVector3fMap() + transformation.block<3, 1>(0, 3);
       float L2 = (transformed_point.getVector3fMap() - pts_after[indices[i]].getVector3fMap()).norm();
@@ -273,17 +283,15 @@ printf("\n");
     if (num_inliers > best_num_inliers) {
       best_num_inliers = num_inliers;
       best_transformation = transformation;
-printf("renew \n");
-printf("best_num_inliers : \n", best_num_inliers);
-for(auto i : combination_mask)
-printf("%d ", i);
-printf("\n");
+      res_idx = rnd_idx;
     }
 
-    ++iteration;
-  } while(iteration != max_iterations && std::next_permutation(combination_mask.begin(), combination_mask.end()));
+  }
 
 printf("res (%d ea)\n", best_num_inliers);
+for(int i = 0; i<3; ++i)
+printf("%d ", res_idx[i]);
+std::cout<<std::endl;
 std::cout<<best_transformation<<std::endl;
   // Return the best transformation
   return best_transformation;
@@ -339,7 +347,7 @@ printf("%d ", dynamic_pts_indices_group[i][j]);
 std::cout<<std::endl;
 }
 for(int i = 0; i<dynamic_pts_indices_group.size(); ++i) {
-for(int j = 0; j < dynamic_pts_indices_group[i].size()-1; ++j) {
+for(int j = 0; j < dynamic_pts_indices_group[i].size(); ++j) {
 auto q = cv::Point2d(calib->value()(0)*dynamic_pts_viz[dynamic_pts_indices_group[i][j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_viz[dynamic_pts_indices_group[i][j]].y+calib->value()(3));
 cv::circle(test_l, q, 3, cv::Scalar(0,255,0), 3);
 }
