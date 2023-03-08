@@ -79,65 +79,65 @@ int nCr (const int n, const int r) {
     return fact(n) / (fact(r) * fact(n - r));
 }
 
-void serialize_dynamic_pts_graph(std::vector<std::vector<size_t>> &dynamic_pts_graph, const size_t num_dynamic_pts, std::vector<std::vector<size_t>> &dynamic_pts_indices_group) {
-  size_t min_num_pts_ransac = 3;
-  std::vector<bool> emplaced(num_dynamic_pts, false);
-  for (size_t i = 0; i<num_dynamic_pts; ++i) {
-    if (dynamic_pts_graph[i].empty() || emplaced[i])
+void serialize_graph(std::vector<std::vector<size_t>> &graph, const size_t num_pts, std::vector<std::vector<size_t>> &graphed_idcs) {
+  graphed_idcs = std::vector<std::vector<size_t>>(1);
+  const size_t min_num_pts = 3;
+  std::vector<bool> emplaced(num_pts, false);
+  for (size_t i = 0; i<num_pts; ++i) {
+    if (graph[i].empty() || emplaced[i])
       continue;
 
-    size_t cnt = 0;
-    std::stack<size_t> s;
+    size_t num_pts = 0;
+    std::stack<size_t> stack;
     emplaced[i] = true;
-    s.emplace(i);
-    while (!s.empty()) {
-      size_t idx_now = s.top();
-      s.pop();
+    stack.emplace(i);
+    while (!stack.empty()) {
+      size_t idx_now = stack.top();
+      stack.pop();
 
-      ++cnt;
-      dynamic_pts_indices_group.back().emplace_back(idx_now);
-      for (auto next_idx : dynamic_pts_graph[idx_now]) {
+      ++num_pts;
+      graphed_idcs.back().emplace_back(idx_now);
+      for (auto next_idx : graph[idx_now]) {
         if (!emplaced[next_idx]) {
           emplaced[next_idx] = true;
-          s.emplace(next_idx);
+          stack.emplace(next_idx);
         }
       }
     }
 
-    if (cnt < min_num_pts_ransac)
-      dynamic_pts_indices_group.back().clear();
+    if (num_pts < min_num_pts)
+      graphed_idcs.back().clear();
     else
-      dynamic_pts_indices_group.emplace_back(std::vector<size_t>{});
+      graphed_idcs.emplace_back(std::vector<size_t>{});
   }
-  if (!dynamic_pts_indices_group.empty() && dynamic_pts_indices_group.back().empty())
-    dynamic_pts_indices_group.pop_back();
+  if (!graphed_idcs.empty() && graphed_idcs.back().empty())
+    graphed_idcs.pop_back();
 }
 
-void construct_dynamic_pts_graph(const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_after, const size_t num_dynamic_pts, const size_t num_nearest, std::vector<std::vector<size_t>> &dynamic_pts_graph, cv::Mat &test_l, const std::shared_ptr<Vec> &calib, std::vector<cv::Point2d> &dynamic_pts_now_viz, std::vector<cv::Point2d> &dynamic_pts_before_viz) {
+void make_graph(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const size_t num_pts, const size_t num_nearest, std::vector<std::vector<size_t>> &graph, cv::Mat &test_l, const std::shared_ptr<Vec> &calib, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
+  graph = std::vector<std::vector<size_t>>(num_pts);
   pcl::KdTreeFLANN<pcl::PointXYZ> kd_tree;
-  kd_tree.setInputCloud(dynamic_pts_after);
-  for (size_t i = 0; i<num_dynamic_pts; ++i) {
-    pcl::PointXYZ query_point = dynamic_pts_after->at(i);
+  kd_tree.setInputCloud(pts_after);
+  for (size_t i = 0; i<num_pts; ++i) {
+    pcl::PointXYZ query_point = pts_after->at(i);
 
     // Search for the k nearest neighbors to the query point
-    std::vector<int> indices(num_nearest+1);
-    std::vector<float> distances(num_nearest+1);
-    kd_tree.nearestKSearch(query_point, num_nearest+1, indices, distances);
-auto from = cv::Point2d(calib->value()(0)*dynamic_pts_now_viz[i].x+calib->value()(2), calib->value()(1)*dynamic_pts_now_viz[i].y+calib->value()(3));
+    std::vector<int> idcs(num_nearest+1);
+    std::vector<float> dists(num_nearest+1);
+    kd_tree.nearestKSearch(query_point, num_nearest+1, idcs, dists);
+auto from = cv::Point2d(calib->value()(0)*pts_now_viz[i].x+calib->value()(2), calib->value()(1)*pts_now_viz[i].y+calib->value()(3));
     for (size_t j = 0; j<= num_nearest; ++j) {
       // Graph only points that are close in distance and not query points
-      if (distances[j] < 2.0 && (size_t)indices[j] != i) {
-        dynamic_pts_graph[i].emplace_back((size_t)indices[j]);
-        dynamic_pts_graph[indices[j]].emplace_back(i);
-// printf("%d -> %d\n", i, indices[j]);
-// printf("%d -> %d\n", indices[j], i);
-auto from_before = cv::Point2d(calib->value()(0)*dynamic_pts_before_viz[i].x+calib->value()(2), calib->value()(1)*dynamic_pts_before_viz[i].y+calib->value()(3));
+      if (dists[j] < 2.0 && (size_t)idcs[j] != i) {
+        graph[i].emplace_back((size_t)idcs[j]);
+        graph[idcs[j]].emplace_back(i);
+auto from_before = cv::Point2d(calib->value()(0)*pts_before_viz[i].x+calib->value()(2), calib->value()(1)*pts_before_viz[i].y+calib->value()(3));
 cv::arrowedLine(test_l, from_before, from, cv::Scalar(255,0,0), 2);
 cv::putText(test_l, std::to_string(i), from, 1, 2, cv::Scalar(0,0,255), 2);
-auto to = cv::Point2d(calib->value()(0)*dynamic_pts_now_viz[indices[j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_now_viz[indices[j]].y+calib->value()(3));
-auto to_before = cv::Point2d(calib->value()(0)*dynamic_pts_before_viz[indices[j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_before_viz[indices[j]].y+calib->value()(3));
+auto to = cv::Point2d(calib->value()(0)*pts_now_viz[idcs[j]].x+calib->value()(2), calib->value()(1)*pts_now_viz[idcs[j]].y+calib->value()(3));
+auto to_before = cv::Point2d(calib->value()(0)*pts_before_viz[idcs[j]].x+calib->value()(2), calib->value()(1)*pts_before_viz[idcs[j]].y+calib->value()(3));
 cv::arrowedLine(test_l, to_before, to, cv::Scalar(255,0,0), 2);
-cv::putText(test_l, std::to_string(indices[j]), to, 1, 2, cv::Scalar(0,0,255), 2);
+cv::putText(test_l, std::to_string(idcs[j]), to, 1, 2, cv::Scalar(0,0,255), 2);
 cv::line(test_l, from, to, cv::Scalar(0, 0, 255), 1);
 cv::circle(test_l, to, 3, cv::Scalar(255,255,255), 3);
       }
@@ -145,43 +145,40 @@ cv::circle(test_l, to, 3, cv::Scalar(255,255,255), 3);
   }
 }
 
-void reject_static_pts(const std::shared_ptr<Vec> &calib, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &dynamic_pts_after, const cv::Mat &pts3d_before, const cv::Mat &pts3d_after, const cv::Mat &pts3d_predict, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, cv::Mat &test_l, std::vector<cv::Point2d> &dynamic_pts_now_viz, std::vector<cv::Point2d> &dynamic_pts_before_viz) {
-  size_t num_pts = pts3d_before.cols;
+void reject_static_pts(const std::shared_ptr<Vec> &calib, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const cv::Mat &raw_pts3d_before, const cv::Mat &raw_pts3d_after, const cv::Mat &raw_pts3d_pred, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, cv::Mat &test_l, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
+  pts_after = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  pts_before = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  size_t num_pts = raw_pts3d_before.cols;
   for(size_t i = 0; i<num_pts; ++i) {
-// auto lb = cv::Point2d(calib->value()(0)*(double)klt_passed_pts_C0[0][i].x+calib->value()(2), calib->value()(1)*(double)klt_passed_pts_C0[0][i].y+calib->value()(3));
-// auto la = cv::Point2d(calib->value()(0)*(double)klt_passed_pts_C0[1][i].x+calib->value()(2), calib->value()(1)*(double)klt_passed_pts_C0[1][i].y+calib->value()(3));
     // Predicted points in a Euclidean frame
-    double x_predict = pts3d_predict.at<double>(0, i)/pts3d_predict.at<double>(3, i);
-    double y_predict = pts3d_predict.at<double>(1, i)/pts3d_predict.at<double>(3, i);
-    double z_predict = pts3d_predict.at<double>(2, i)/pts3d_predict.at<double>(3, i);
+    double x_pred = raw_pts3d_pred.at<double>(0, i)/raw_pts3d_pred.at<double>(3, i);
+    double y_pred = raw_pts3d_pred.at<double>(1, i)/raw_pts3d_pred.at<double>(3, i);
+    double z_pred = raw_pts3d_pred.at<double>(2, i)/raw_pts3d_pred.at<double>(3, i);
 
     // Observed points in a Euclidean frame
-    double x_after = pts3d_after.at<double>(0, i)/pts3d_after.at<double>(3, i);
-    double y_after = pts3d_after.at<double>(1, i)/pts3d_after.at<double>(3, i);
-    double z_after = pts3d_after.at<double>(2, i)/pts3d_after.at<double>(3, i);
+    double x_after = raw_pts3d_after.at<double>(0, i)/raw_pts3d_after.at<double>(3, i);
+    double y_after = raw_pts3d_after.at<double>(1, i)/raw_pts3d_after.at<double>(3, i);
+    double z_after = raw_pts3d_after.at<double>(2, i)/raw_pts3d_after.at<double>(3, i);
 
     // L2 in Euclidean with z-direction penalty
-    double weighted_L2_3d = sqrt(pow(x_predict - x_after, 2) + pow(y_predict - y_after, 2) + (1/1.5) * pow(z_predict - z_after, 2));
+    double weighted_L2_3d = sqrt(pow(x_pred - x_after, 2) + pow(y_pred - y_after, 2) + (1/1.5) * pow(z_pred - z_after, 2));
 
     // reprojection error
-    double L2_2d = sqrt(pow(x_predict/z_predict - (double)klt_passed_pts_C0[1][i].x, 2) + pow(y_predict/z_predict - (double)klt_passed_pts_C0[1][i].y, 2));
+    double L2_2d = sqrt(pow(x_pred/z_pred - (double)raw_pts_C0[1][i].x, 2) + pow(y_pred/z_pred - (double)raw_pts_C0[1][i].y, 2));
     // Insert dynamic points into a point cloud
-    if (z_predict < 100 && z_after < 100 && weighted_L2_3d < 100 && (L2_2d > 5/calib->value()(0) || weighted_L2_3d > 0.1)) {
-      double x_before = pts3d_before.at<double>(0, i)/pts3d_before.at<double>(3, i);
-      double y_before = pts3d_before.at<double>(1, i)/pts3d_before.at<double>(3, i);
-      double z_before = pts3d_before.at<double>(2, i)/pts3d_before.at<double>(3, i);
-      dynamic_pts_after->emplace_back(pcl::PointXYZ{(float)x_after, (float)y_after, (float)z_after});
-      dynamic_pts_before->emplace_back(pcl::PointXYZ{(float)x_before, (float)y_before, (float)z_before});
-dynamic_pts_now_viz.emplace_back(cv::Point2d((double)klt_passed_pts_C0[1][i].x, (double)klt_passed_pts_C0[1][i].y));
-dynamic_pts_before_viz.emplace_back(cv::Point2d((double)klt_passed_pts_C0[0][i].x, (double)klt_passed_pts_C0[0][i].y));
-// cv::circle(test_l, la, 3, cv::Scalar(255,255,255), 3);
-// cv::arrowedLine(test_l, lb, la, cv::Scalar(255,0,0), 2);
-// cv::putText(test_l, std::to_string(dynamic_pts_now_viz.size()-1), la, 1, 2, cv::Scalar(0,0,255), 2);
+    if (z_pred < 100 && z_after < 100 && weighted_L2_3d < 100 && (L2_2d > 5/calib->value()(0) || weighted_L2_3d > 0.1)) {
+      double x_before = raw_pts3d_before.at<double>(0, i)/raw_pts3d_before.at<double>(3, i);
+      double y_before = raw_pts3d_before.at<double>(1, i)/raw_pts3d_before.at<double>(3, i);
+      double z_before = raw_pts3d_before.at<double>(2, i)/raw_pts3d_before.at<double>(3, i);
+      pts_after->emplace_back(pcl::PointXYZ{(float)x_after, (float)y_after, (float)z_after});
+      pts_before->emplace_back(pcl::PointXYZ{(float)x_before, (float)y_before, (float)z_before});
+pts_now_viz.emplace_back(cv::Point2d((double)raw_pts_C0[1][i].x, (double)raw_pts_C0[1][i].y));
+pts_before_viz.emplace_back(cv::Point2d((double)raw_pts_C0[0][i].x, (double)raw_pts_C0[0][i].y));
     }
   }
 }
 
-void get_measurement_and_prediction(const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, cv::Mat &pts3d_before, cv::Mat &pts3d_after, cv::Mat &pts3d_predict) {
+void get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, cv::Mat &raw_pts3d_before, cv::Mat &raw_pts3d_after, cv::Mat &raw_pts3d_pred) {
   auto R_GtoIA = Eigen::Matrix3d(state->_imu->Rot());
   auto p_IAinG = Eigen::Vector3d(state->_imu->pos());
   auto R_IAtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
@@ -226,93 +223,94 @@ void get_measurement_and_prediction(const std::shared_ptr<ov_msckf::State> &stat
   cv::eigen2cv(P_C0A_temp, P_C0A);
   cv::eigen2cv(P_C1B_temp, P_C1B);
   cv::eigen2cv(P_C1A_temp, P_C1A);
-  cv::triangulatePoints(P_C0B, P_C1B, klt_passed_pts_C0[0], klt_passed_pts_C1[0], pts3d_before);
-  cv::triangulatePoints(P_C0A, P_C1A, klt_passed_pts_C0[1], klt_passed_pts_C1[1], pts3d_after);
+  cv::triangulatePoints(P_C0B, P_C1B, raw_pts_C0[0], raw_pts_C1[0], raw_pts3d_before);
+  cv::triangulatePoints(P_C0A, P_C1A, raw_pts_C0[1], raw_pts_C1[1], raw_pts3d_after);
 
   // Compute a prediction of the points for motion, assuming the received points are static
   cv::Mat T_BtoA;
   cv::Mat T_bottom = (cv::Mat_<double>(1, 4) << 0.0, 0.0, 0.0, 1.0);
   cv::vconcat(P_C0A, T_bottom, T_BtoA);
-  pts3d_before.convertTo(pts3d_before, CV_64F);
-  pts3d_after.convertTo(pts3d_after, CV_64F);
-  pts3d_predict = T_BtoA * pts3d_before;
+  raw_pts3d_before.convertTo(raw_pts3d_before, CV_64F);
+  raw_pts3d_after.convertTo(raw_pts3d_after, CV_64F);
+  raw_pts3d_pred = T_BtoA * raw_pts3d_before;
 }
 
-Eigen::Matrix4f ransac_transformation(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
-                       const std::vector<size_t> &indices, const float threshold, const float probability, bool &ok, std::vector<uchar> &masked_indices) {
+Eigen::Matrix4f ransac_tf(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
+                       const std::vector<size_t> &idcs, const float th_L2, const float probability, bool &succeed, std::vector<uchar> &mask) {
 printf("input : ");
-for(int i = 0;i<indices.size(); ++i)
-printf("%d ", indices[i]);
+for(int i = 0;i<idcs.size(); ++i)
+printf("%d ", idcs[i]);
 printf("\n");
   // Initialize the RANSAC parameters
   // Number of points to draw for each iteration
   const int k = 3; 
-  int max_iterations = log(1 - probability) / log(1 - pow(1 - 0.3, k));
+  int max_iters = log(1 - probability) / log(1 - pow(1 - 0.3, k));
   // will modify this
-  if (indices.size() < 10) {
-    max_iterations = std::min(max_iterations, nCr(indices.size(), k));
+  size_t num_input = idcs.size();
+  if (num_input < 10) {
+    max_iters = std::min(max_iters, nCr(num_input, k));
   }
-printf("max_iterations %d \n", max_iterations);
+printf("max_iters %d \n", max_iters);
   int best_num_inliers = -1;
-  Eigen::Matrix4f best_transformation;
-  std::vector<uchar> inliers_mask(indices.size(), 0);
+  Eigen::Matrix4f best_tf;
+  std::vector<uchar> inliers_mask(idcs.size(), 0);
   std::random_device rd;
   std::mt19937 gen(rd());
   
-  std::vector<int> res_idx(k);
-  std::vector<int> rnd_idx(k);
+  std::vector<int> res_idcs(k);
+  std::vector<int> sample_idcs(k);
   std::set<std::vector<int>> used;
-  std::vector<int> rnd_base(indices.size());
+  std::vector<int> rnd_base(idcs.size());
   std::iota(rnd_base.begin(), rnd_base.end(), 0);
 
   // Iterate for a maximum number of iterations
 int fail_cnt = 0;
-  for (size_t iter = 0; iter < max_iterations && fail_cnt<100; iter++) {
-    inliers_mask = std::vector<uchar>(indices.size(), 0);
+  for (size_t iter = 0; iter < (size_t)max_iters && fail_cnt<100; iter++) {
+    inliers_mask = std::vector<uchar>(idcs.size(), 0);
     std::shuffle(rnd_base.begin(), rnd_base.end(), gen);
-    for (size_t i = 0; i < k; ++i) {
-      rnd_idx[i] = indices[rnd_base[i]];
+    for (size_t k_i = 0; k_i<k; ++k_i) {
+      sample_idcs[k_i] = idcs[rnd_base[k_i]];
     }
-    std::sort(rnd_idx.begin(), rnd_idx.end());
-    if (used.find(rnd_idx) != used.end()) {
+    std::sort(sample_idcs.begin(), sample_idcs.end());
+    if (used.find(sample_idcs) != used.end()) {
         --iter;
 printf("fail\n");
 ++fail_cnt;
         continue;
     }
 while(fail_cnt > 99) {
-printf("catch\n");
+printf("catch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\n");
   continue;
 }
-    used.emplace(rnd_idx);
+    used.emplace(sample_idcs);
 // printf("suggestion idcs \n");
     // Estimate the transformation using the k random points
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_before(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_after(new pcl::PointCloud<pcl::PointXYZ>);
     for (size_t i = 0; i < k; ++i) {
-      sample_before->emplace_back(pts_before[rnd_idx[i]]);
-      sample_after->emplace_back(pts_after[rnd_idx[i]]);
-// printf("%d ", rnd_idx[i]);
+      sample_before->emplace_back(pts_before[sample_idcs[i]]);
+      sample_after->emplace_back(pts_after[sample_idcs[i]]);
+// printf("%d ", sample_idcs[i]);
     }
 // printf("\n");
     pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
-    Eigen::Matrix4f transformation;
-    svd.estimateRigidTransformation(*sample_before, *sample_after, transformation);
+    Eigen::Matrix4f sample_tf;
+    svd.estimateRigidTransformation(*sample_before, *sample_after, sample_tf);
 // std::cout<<transformation<<std::endl;
 
     // Evaluate the transformation using the available points
     int num_inliers = 0;
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr ptr_transformed(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::transformPointCloud(pts_before, *ptr_transformed, transformation);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pts_pred(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::transformPointCloud(pts_before, *pts_pred, sample_tf);
 
-    for (size_t i = 0; i < indices.size(); ++i) {
+    for (size_t i = 0; i < num_input; ++i) {
       // pcl::PointXYZ transformed_point;
       // Eigen::Quaternionf q(transformation.block<3, 3>(0, 0));
-      // transformed_point.getVector3fMap() = q * pts_before[indices[i]].getVector3fMap() + transformation.block<3, 1>(0, 3);
-      // float L2 = (transformed_point.getVector3fMap() - pts_after[indices[i]].getVector3fMap()).norm();
-      float L2 = (ptr_transformed->at(indices[i]).getVector3fMap() - pts_after[indices[i]].getVector3fMap()).norm();
-      if (L2 < threshold) {
+      // transformed_point.getVector3fMap() = q * pts_before[idcs[i]].getVector3fMap() + transformation.block<3, 1>(0, 3);
+      // float L2 = (transformed_point.getVector3fMap() - pts_after[idcs[i]].getVector3fMap()).norm();
+      float L2 = (pts_pred->at(idcs[i]).getVector3fMap() - pts_after[idcs[i]].getVector3fMap()).norm();
+      if (L2 < th_L2) {
         ++num_inliers;
         inliers_mask[i] = 1;
       }
@@ -321,150 +319,132 @@ printf("catch\n");
     // Update the best transformation if the current transformation has more inliers
     if (num_inliers > best_num_inliers) {
       best_num_inliers = num_inliers;
-      best_transformation = transformation;
-      res_idx = rnd_idx;
-      masked_indices = inliers_mask;
+      best_tf = sample_tf;
+      res_idcs = sample_idcs;
+      mask = inliers_mask;
     }
 
     if (best_num_inliers < k) {
-      ok = false;
+      succeed = false;
     }
     else {
-      ok = true;
+      succeed = true;
     }
-
   }
 
 printf("res (%d ea)\n", best_num_inliers);
 for(int i = 0; i<3; ++i)
-printf("%d ", res_idx[i]);
+printf("%d ", res_idcs[i]);
 printf("and ");
-for(int i = 0; i<masked_indices.size(); ++i)
+for(int i = 0; i<mask.size(); ++i)
 {
-  if(masked_indices[i] == 1)
-    printf("%d ", indices[i]);
+  if(mask[i] == 1)
+    printf("%d ", idcs[i]);
 }
 std::cout<<std::endl;
-std::cout<<best_transformation<<std::endl;
+std::cout<<best_tf<<std::endl;
   // Return the best transformation
-  return best_transformation;
+  return best_tf;
 }
 
-void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, const std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1) {
+void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1) {
 cv::Mat test_l;
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
-std::vector<cv::Point2d> dynamic_pts_now_viz;
-std::vector<cv::Point2d> dynamic_pts_before_viz;
-  if (klt_passed_pts_C0[0].empty()) {
+std::vector<cv::Point2d> pts_now_viz;
+std::vector<cv::Point2d> pts_before_viz;
+  if (raw_pts_C0[0].empty()) {
 cv::imshow("test", test_l);
 cv::waitKey(1);
     return;
   }
 
-  cv::Mat pts3d_before;
-  cv::Mat pts3d_after;
-  cv::Mat pts3d_predict;
-  get_measurement_and_prediction(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1, pts3d_before, pts3d_after, pts3d_predict);
-
+  cv::Mat raw_pts3d_before;
+  cv::Mat raw_pts3d_after;
+  cv::Mat raw_pts3d_pred;
+  get_meas_and_pred(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, raw_pts_C0, raw_pts_C1, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred);
 
   // Receive an instruction that changes every time
   std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(0);
   // reject static pts, get only dynamic pts
-  pcl::PointCloud<pcl::PointXYZ>::Ptr dynamic_pts_after(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr dynamic_pts_before(new pcl::PointCloud<pcl::PointXYZ>);
-  reject_static_pts(calib, dynamic_pts_before, dynamic_pts_after, pts3d_before, pts3d_after, pts3d_predict, klt_passed_pts_C0, klt_passed_pts_C1, test_l, dynamic_pts_now_viz, dynamic_pts_before_viz);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr pts_after;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr pts_before;
+  reject_static_pts(calib, pts_before, pts_after, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred, raw_pts_C0, raw_pts_C1, test_l, pts_now_viz, pts_before_viz);
   
   // Get k nearest points in the neighbourhood
-  size_t num_nearest = 3;
-  size_t num_dynamic_pts = dynamic_pts_after->size();
-  if (num_dynamic_pts > num_nearest) {
-    std::vector<std::vector<size_t>> dynamic_pts_graph(num_dynamic_pts);
-    construct_dynamic_pts_graph(dynamic_pts_after, num_dynamic_pts, num_nearest, dynamic_pts_graph, test_l, calib, dynamic_pts_now_viz, dynamic_pts_before_viz);
-
-// for(int i = 0; i<dynamic_pts_graph.size(); ++i) {
-// printf("%d : ", i);
-// for(auto j : dynamic_pts_graph[i]) {
-// printf("%d ", j);
-// }
-// std::cout<<std::endl;
-// }
+  const size_t num_nearest = 3;
+  size_t num_pts = pts_after->size();
+  if (num_pts > num_nearest) {
+    std::vector<std::vector<size_t>> graph;
+    make_graph(pts_after, num_pts, num_nearest, graph, test_l, calib, pts_now_viz, pts_before_viz);
 
     // DFS to bring all elements of a graph together and reject graphs with fewer nodes
-    std::vector<std::vector<size_t>> dynamic_pts_indices_group(1);
-    serialize_dynamic_pts_graph(dynamic_pts_graph, num_dynamic_pts, dynamic_pts_indices_group);
+    std::vector<std::vector<size_t>> graphed_idcs;
+    serialize_graph(graph, num_pts, graphed_idcs);
 
-
-for(int i = 0; i<dynamic_pts_indices_group.size(); ++i) {
-for(int j = 0; j <dynamic_pts_indices_group[i].size(); ++j) {
-printf("%d ", dynamic_pts_indices_group[i][j]);
+for(int i = 0; i<graphed_idcs.size(); ++i) {
+for(int j = 0; j <graphed_idcs[i].size(); ++j) {
+printf("%d ", graphed_idcs[i][j]);
 }
 std::cout<<std::endl;
 }
-// for(int i = 0; i<dynamic_pts_indices_group.size(); ++i) {
-// for(int j = 0; j < dynamic_pts_indices_group[i].size(); ++j) {
-// auto q = cv::Point2d(calib->value()(0)*dynamic_pts_now_viz[dynamic_pts_indices_group[i][j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_now_viz[dynamic_pts_indices_group[i][j]].y+calib->value()(3));
-// cv::circle(test_l, q, 3, cv::Scalar(0,255,0), 3);
-// }
-// }
-    std::vector<std::vector<std::vector<size_t>>> dynamic_pts_labels(dynamic_pts_indices_group.size());
-    for (size_t group_idx = 0; group_idx<dynamic_pts_indices_group.size(); ++group_idx) {
-      bool ok = true;
-      std::vector<size_t> graph_indices = dynamic_pts_indices_group[group_idx];
-      std::vector<uchar> masked_indices(dynamic_pts_indices_group[group_idx].size(), 0);
-      ransac_transformation(*dynamic_pts_before, *dynamic_pts_after, dynamic_pts_indices_group[group_idx], 0.2, 0.99, ok, masked_indices);
-printf("ok? %d\n", ok);
-      while (ok) {
-        std::vector<size_t> partial_indices;
-        std::vector<size_t> inlier_indices;
-        for (size_t mask_idx = 0; mask_idx < masked_indices.size(); ++mask_idx) {
-          if (masked_indices[mask_idx] == 1) {
-            inlier_indices.emplace_back(graph_indices[mask_idx]);
+
+    std::vector<std::vector<std::vector<size_t>>> pts_labels(graphed_idcs.size());
+    size_t num_graph = graphed_idcs.size();
+    for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
+      bool succeed = true;
+      std::vector<size_t> now_idcs = graphed_idcs[graph_idx];
+      std::vector<uchar> mask(graphed_idcs[graph_idx].size(), 0);
+      ransac_tf(*pts_before, *pts_after, now_idcs, 0.2, 0.99, succeed, mask);
+printf("succeed? %d\n", succeed);
+      while (succeed) {
+        std::vector<size_t> next_idcs;
+        std::vector<size_t> inlier_idcs;
+        for (size_t mask_idx = 0; mask_idx < mask.size(); ++mask_idx) {
+          if (mask[mask_idx] == 1) {
+            inlier_idcs.emplace_back(now_idcs[mask_idx]);
           }
           else {
-            partial_indices.emplace_back(graph_indices[mask_idx]);
+            next_idcs.emplace_back(now_idcs[mask_idx]);
           }
         }
 
-        dynamic_pts_labels[group_idx].emplace_back(inlier_indices);
+        pts_labels[graph_idx].emplace_back(inlier_idcs);
+
 printf("next suggestion : ");
-for(int i = 0; i<partial_indices.size(); ++i)
-printf("%d ", partial_indices[i]);
+for(int i = 0; i<next_idcs.size(); ++i)
+printf("%d ", next_idcs[i]);
 printf("\n");
-        if (partial_indices.size() < 3) {
-          dynamic_pts_labels[group_idx].emplace_back(partial_indices);
+
+        if (next_idcs.size() < 3) {
+          pts_labels[graph_idx].emplace_back(next_idcs);
           break;
         }
 
-        graph_indices = partial_indices;
-        masked_indices = std::vector<uchar> (partial_indices.size(), 0);
-        ransac_transformation(*dynamic_pts_before, *dynamic_pts_after, partial_indices, 0.2, 0.99, ok, masked_indices);
+        now_idcs = next_idcs;
+        mask = std::vector<uchar> (next_idcs.size(), 0);
+        ransac_tf(*pts_before, *pts_after, next_idcs, 0.2, 0.99, succeed, mask);
 
-        if (!ok) {
-          dynamic_pts_labels[group_idx].emplace_back(partial_indices);
+        if (!succeed) {
+          pts_labels[graph_idx].emplace_back(next_idcs);
         } 
-
-// for(int j = 0; j < dynamic_pts_indices_group[group_idx].size(); ++j) {
-// auto q = cv::Point2d(calib->value()(0)*dynamic_pts_now_viz[dynamic_pts_indices_group[group_idx][j]].x+calib->value()(2), calib->value()(1)*dynamic_pts_now_viz[dynamic_pts_indices_group[group_idx][j]].y+calib->value()(3));
-// cv::circle(test_l, q, 3, cv::Scalar(0,255,0), 3);
-// }
       }
     }
 
 printf("labels\n");
-for(int i = 0; i<dynamic_pts_labels.size(); ++i)
+for(int i = 0; i<pts_labels.size(); ++i)
 {
 printf("graph %d :\n", i);
-for(int j = 0; j<dynamic_pts_labels[i].size(); ++j)
+for(int j = 0; j<pts_labels[i].size(); ++j)
 {
 auto label_color = randomColor();
-if(j == dynamic_pts_labels[i].size()-1)
+if(j == pts_labels[i].size()-1)
 label_color = cv::Scalar(255,255,255);
 printf("{");
-for(int k = 0; k<dynamic_pts_labels[i][j].size(); ++k)
+for(int k = 0; k<pts_labels[i][j].size(); ++k)
 {
-printf("%d ", dynamic_pts_labels[i][j][k]);
-int idx = dynamic_pts_labels[i][j][k];
-auto q = cv::Point2d(calib->value()(0)*dynamic_pts_now_viz[idx].x+calib->value()(2), calib->value()(1)*dynamic_pts_now_viz[idx].y+calib->value()(3));
+printf("%d ", pts_labels[i][j][k]);
+int idx = pts_labels[i][j][k];
+auto q = cv::Point2d(calib->value()(0)*pts_now_viz[idx].x+calib->value()(2), calib->value()(1)*pts_now_viz[idx].y+calib->value()(3));
 cv::circle(test_l, q, 3, label_color, 3);
 cv::circle(test_l, q, 8, cv::Scalar(0,0,0), 2);
 }
