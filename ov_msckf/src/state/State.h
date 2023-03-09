@@ -87,6 +87,9 @@ public:
   /// Pointer to the "active" IMU state (q_GtoI, p_IinG, v_IinG, bg, ba)
   std::shared_ptr<ov_type::IMU> _imu;
 
+  Eigen::Matrix3d _R_GtoIB;
+  Eigen::Vector3d _p_IBinG;
+
   /// Map between imaging times and clone poses (q_GtoIi, p_IiinG)
   std::map<double, std::shared_ptr<ov_type::PoseJPL>> _clones_IMU;
 

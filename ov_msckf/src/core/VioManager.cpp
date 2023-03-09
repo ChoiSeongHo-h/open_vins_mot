@@ -164,7 +164,7 @@ void reject_static_pts(const std::shared_ptr<Vec> &calib, pcl::PointCloud<pcl::P
     double weighted_L2_3d = sqrt(pow(x_pred - x_after, 2) + pow(y_pred - y_after, 2) + (1/1.5) * pow(z_pred - z_after, 2));
 
     // reprojection error
-    double L2_2d = sqrt(pow(x_pred/z_pred - (double)raw_pts_C0[1][i].x, 2) + pow(y_pred/z_pred - (double)raw_pts_C0[1][i].y, 2));
+    double L2_2d = sqrt(pow(x_pred/z_pred - x_after/x_pred, 2) + pow(y_pred/z_pred - y_after/y_pred, 2));
     // Insert dynamic points into a point cloud
     if (z_pred < 100 && z_after < 100 && weighted_L2_3d < 100 && (L2_2d > 5/calib->value()(0) || weighted_L2_3d > 0.1)) {
       double x_before = raw_pts3d_before.at<double>(0, i)/raw_pts3d_before.at<double>(3, i);
@@ -178,43 +178,45 @@ pts_before_viz.emplace_back(cv::Point2d((double)raw_pts_C0[0][i].x, (double)raw_
   }
 }
 
-void get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, cv::Mat &raw_pts3d_before, cv::Mat &raw_pts3d_after, cv::Mat &raw_pts3d_pred) {
+void get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, cv::Mat &raw_pts3d_before, cv::Mat &raw_pts3d_after, cv::Mat &raw_pts3d_pred) {
   auto R_GtoIA = Eigen::Matrix3d(state->_imu->Rot());
   auto p_IAinG = Eigen::Vector3d(state->_imu->pos());
-  auto R_IAtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
-  auto R_IAtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
-  auto p_IAinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
-  auto p_IAinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
+  auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
+  auto R_ItoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
+  auto p_IinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
+  auto p_IinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
+  auto R_GtoIB = state->_R_GtoIB;
+  auto p_IBinG = state->_p_IBinG;
 
   // criteria point : {global}
-  Eigen::Matrix3d R_GtoC0B = R_IBtoC0 * R_GtoIB;
-  Eigen::Matrix3d R_GtoC0A = R_IAtoC0 * R_GtoIA;
-  Eigen::Matrix3d R_GtoC1B = R_IBtoC1 * R_GtoIB;
-  Eigen::Matrix3d R_GtoC1A = R_IAtoC1 * R_GtoIA;
-  Eigen::Vector3d p_GinC0B = p_IBinC0 - R_GtoC0B * p_IBinG;
-  Eigen::Vector3d p_GinC0A = p_IAinC0 - R_GtoC0A * p_IAinG;
-  Eigen::Vector3d p_GinC1B = p_IBinC1 - R_GtoC1B * p_IBinG;
-  Eigen::Vector3d p_GinC1A = p_IAinC1 - R_GtoC1A * p_IAinG;
+  Eigen::Matrix3d R_GtoC0B = R_ItoC0 * R_GtoIB;
+  Eigen::Matrix3d R_GtoC0A = R_ItoC0 * R_GtoIA;
+  Eigen::Matrix3d R_GtoC1B = R_ItoC1 * R_GtoIB;
+  Eigen::Matrix3d R_GtoC1A = R_ItoC1 * R_GtoIA;
+  Eigen::Vector3d p_GinC0B = p_IinC0 - R_GtoC0B * p_IBinG;
+  Eigen::Vector3d p_GinC0A = p_IinC0 - R_GtoC0A * p_IAinG;
+  Eigen::Vector3d p_GinC1B = p_IinC1 - R_GtoC1B * p_IBinG;
+  Eigen::Vector3d p_GinC1A = p_IinC1 - R_GtoC1A * p_IAinG;
 
-  // criteria point : {cam0} when (t-1)
+  // criteria point : {cam0}
   Eigen::Matrix3d R_C0BtoCOB = Eigen::Matrix3d::Identity();
-  Eigen::Matrix3d R_C0BtoC0A = R_GtoC0A * R_GtoC0B.transpose();
+  Eigen::Matrix3d R_C0AtoC0A = Eigen::Matrix3d::Identity();
   Eigen::Matrix3d R_C0BtoC1B = R_GtoC1B * R_GtoC0B.transpose();
-  Eigen::Matrix3d R_C0BtoC1A = R_GtoC1A * R_GtoC0B.transpose();
+  Eigen::Matrix3d R_C0AtoC1A = R_GtoC1A * R_GtoC0A.transpose();
   Eigen::Vector3d p_C0BinC0B = Eigen::Vector3d::Zero();
-  Eigen::Vector3d p_C0BinC0A = p_GinC0A - R_C0BtoC0A * p_GinC0B;
+  Eigen::Vector3d p_C0AinC0A = Eigen::Vector3d::Zero();
   Eigen::Vector3d p_C0BinC1B = p_GinC1B - R_C0BtoC1B * p_GinC0B;
-  Eigen::Vector3d p_C0BinC1A = p_GinC1A - R_C0BtoC1A * p_GinC0B;
+  Eigen::Vector3d p_C0AinC1A = p_GinC1A - R_C0AtoC1A * p_GinC0A;
 
   //Since I've been passed normalized points, the projection matrix is an extrinsic
   Eigen::Matrix<double, 3, 4> P_C0B_temp;
   P_C0B_temp << R_C0BtoCOB, p_C0BinC0B;
   Eigen::Matrix<double, 3, 4> P_C0A_temp;
-  P_C0A_temp << R_C0BtoC0A, p_C0BinC0A;
+  P_C0A_temp << R_C0AtoC0A, p_C0AinC0A;
   Eigen::Matrix<double, 3, 4> P_C1B_temp;
   P_C1B_temp << R_C0BtoC1B, p_C0BinC1B;
   Eigen::Matrix<double, 3, 4> P_C1A_temp;
-  P_C1A_temp << R_C0BtoC1A, p_C0BinC1A;
+  P_C1A_temp << R_C0AtoC1A, p_C0AinC1A;
   cv::Mat P_C0B;
   cv::Mat P_C0A;
   cv::Mat P_C1B;
@@ -227,16 +229,23 @@ void get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &state, const Eige
   cv::triangulatePoints(P_C0A, P_C1A, raw_pts_C0[1], raw_pts_C1[1], raw_pts3d_after);
 
   // Compute a prediction of the points for motion, assuming the received points are static
-  cv::Mat T_BtoA;
-  cv::Mat T_bottom = (cv::Mat_<double>(1, 4) << 0.0, 0.0, 0.0, 1.0);
-  cv::vconcat(P_C0A, T_bottom, T_BtoA);
+  Eigen::Matrix3d R_C0BtoC0A = R_GtoC0A * R_GtoC0B.transpose();
+  Eigen::Vector3d p_C0BinC0A = p_GinC0A - R_C0BtoC0A * p_GinC0B;
+  Eigen::Matrix<double, 3, 4> P_C0BtoC0A;
+  P_C0BtoC0A << R_C0BtoC0A, p_C0BinC0A;
+  Eigen::Matrix<double, 1, 4> T_bottom;
+  T_bottom << 0.0, 0.0, 0.0, 1.0;
+  Eigen::Matrix4d T_C0BtoC0A_temp;
+  T_C0BtoC0A_temp << P_C0BtoC0A, T_bottom;
+  cv::Mat T_C0BtoC0A;
+  cv::eigen2cv(T_C0BtoC0A_temp, T_C0BtoC0A);
   raw_pts3d_before.convertTo(raw_pts3d_before, CV_64F);
   raw_pts3d_after.convertTo(raw_pts3d_after, CV_64F);
-  raw_pts3d_pred = T_BtoA * raw_pts3d_before;
+  raw_pts3d_pred = T_C0BtoC0A * raw_pts3d_before;
 }
 
-Eigen::Matrix4f ransac_tf(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
-                       const std::vector<size_t> &idcs, const float th_L2, const float probability, bool &succeed, std::vector<uchar> &mask) {
+void ransac_tf(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
+                       const std::vector<size_t> &idcs, const float th_L2, const float probability, bool &succeed, std::vector<uchar> &mask, Eigen::Matrix4f &inlier_tf, const std::shared_ptr<ov_msckf::State> &state) {
 printf("input : ");
 for(int i = 0;i<idcs.size(); ++i)
 printf("%d ", idcs[i]);
@@ -246,9 +255,9 @@ printf("\n");
   const int k = 3; 
   int max_iters = log(1 - probability) / log(1 - pow(1 - 0.3, k));
   // will modify this
-  size_t num_input = idcs.size();
-  if (num_input < 10) {
-    max_iters = std::min(max_iters, nCr(num_input, k));
+  size_t num_idcs = idcs.size();
+  if (num_idcs < 10) {
+    max_iters = std::min(max_iters, nCr(num_idcs, k));
   }
 printf("max_iters %d \n", max_iters);
   int best_num_inliers = -1;
@@ -278,8 +287,9 @@ printf("fail\n");
 ++fail_cnt;
         continue;
     }
-while(fail_cnt > 99) {
+if(fail_cnt > 90)    
 printf("catch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\n");
+while(fail_cnt > 90) {
   continue;
 }
     used.emplace(sample_idcs);
@@ -287,7 +297,7 @@ printf("catch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\nca
     // Estimate the transformation using the k random points
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_before(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr sample_after(new pcl::PointCloud<pcl::PointXYZ>);
-    for (size_t i = 0; i < k; ++i) {
+    for (size_t i = 0; i<k; ++i) {
       sample_before->emplace_back(pts_before[sample_idcs[i]]);
       sample_after->emplace_back(pts_after[sample_idcs[i]]);
 // printf("%d ", sample_idcs[i]);
@@ -304,11 +314,7 @@ printf("catch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\nca
     pcl::PointCloud<pcl::PointXYZ>::Ptr pts_pred(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::transformPointCloud(pts_before, *pts_pred, sample_tf);
 
-    for (size_t i = 0; i < num_input; ++i) {
-      // pcl::PointXYZ transformed_point;
-      // Eigen::Quaternionf q(transformation.block<3, 3>(0, 0));
-      // transformed_point.getVector3fMap() = q * pts_before[idcs[i]].getVector3fMap() + transformation.block<3, 1>(0, 3);
-      // float L2 = (transformed_point.getVector3fMap() - pts_after[idcs[i]].getVector3fMap()).norm();
+    for (size_t i = 0; i<num_idcs; ++i) {
       float L2 = (pts_pred->at(idcs[i]).getVector3fMap() - pts_after[idcs[i]].getVector3fMap()).norm();
       if (L2 < th_L2) {
         ++num_inliers;
@@ -324,12 +330,48 @@ printf("catch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\ncatch\nca
       mask = inliers_mask;
     }
 
-    if (best_num_inliers < k) {
-      succeed = false;
-    }
-    else {
+    if (best_num_inliers >= k) {
       succeed = true;
     }
+    else {
+      succeed = false;
+    }
+  }
+
+  if (succeed) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_before(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inlier_after(new pcl::PointCloud<pcl::PointXYZ>);
+    for (size_t i = 0; i<num_idcs; ++i) {
+      if (mask[i] == 0)
+        continue;
+
+      inlier_before->emplace_back(pts_before[idcs[i]]);
+      inlier_after->emplace_back(pts_after[idcs[i]]);
+    }
+    // pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
+    // svd.estimateRigidTransformation(*inlier_after, *inlier_before, inlier_tf);
+
+    Eigen::Matrix3d R_C0BtoC0A = best_tf.block<3, 3>(0, 0).cast<double>();
+    Eigen::Vector3d p_C0BinC0A = best_tf.block<3, 1>(0, 3).cast<double>();
+
+    auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
+    auto p_IinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
+
+    Eigen::Vector3d p_GinIB = -state->_R_GtoIB * state->_p_IBinG;
+    Eigen::Vector3d p_GinC0B = R_ItoC0 * p_GinIB + p_IinC0;
+    Eigen::Vector3d pred = R_C0BtoC0A * p_GinC0B + p_C0BinC0A;
+
+    Eigen::Vector3d p_GinIA = -state->_imu->Rot() * state->_imu->pos();
+    Eigen::Vector3d p_GinC0A = R_ItoC0 * p_GinIA + p_IinC0;
+
+    double L2 = (pred - p_GinC0A).norm();
+printf("pred :\n");
+std::cout<<pred<<std::endl;
+printf("now :\n");
+std::cout<<p_GinC0A<<std::endl;
+printf("before :\n");
+std::cout<<p_GinC0B<<std::endl;
+printf("L2 : %f\n", L2);
   }
 
 printf("res (%d ea)\n", best_num_inliers);
@@ -342,12 +384,19 @@ for(int i = 0; i<mask.size(); ++i)
     printf("%d ", idcs[i]);
 }
 std::cout<<std::endl;
+for(int i = 0; i<mask.size(); ++i)
+{
+  if(mask[i] == 1)
+  {
+    std::cout<<pts_before[idcs[i]]<<" ";
+    std::cout<<pts_after[idcs[i]]<<std::endl;
+  }
+}
 std::cout<<best_tf<<std::endl;
   // Return the best transformation
-  return best_tf;
 }
 
-void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const Eigen::Matrix3d &R_IBtoC0, const Eigen::Matrix3d &R_GtoIB, const Eigen::Matrix3d &R_IBtoC1, Eigen::Vector3d &p_IBinC0, Eigen::Vector3d &p_IBinG, Eigen::Vector3d &p_IBinC1, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1) {
+void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1) {
 cv::Mat test_l;
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
 std::vector<cv::Point2d> pts_now_viz;
@@ -361,7 +410,7 @@ cv::waitKey(1);
   cv::Mat raw_pts3d_before;
   cv::Mat raw_pts3d_after;
   cv::Mat raw_pts3d_pred;
-  get_meas_and_pred(state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, raw_pts_C0, raw_pts_C1, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred);
+  get_meas_and_pred(state, raw_pts_C0, raw_pts_C1, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred);
 
   // Receive an instruction that changes every time
   std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(0);
@@ -392,40 +441,42 @@ std::cout<<std::endl;
     size_t num_graph = graphed_idcs.size();
     for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
       bool succeed = true;
-      std::vector<size_t> now_idcs = graphed_idcs[graph_idx];
+      std::vector<size_t> idcs_now = graphed_idcs[graph_idx];
       std::vector<uchar> mask(graphed_idcs[graph_idx].size(), 0);
-      ransac_tf(*pts_before, *pts_after, now_idcs, 0.2, 0.99, succeed, mask);
+      Eigen::Matrix4f tf_now;
+      ransac_tf(*pts_before, *pts_after, idcs_now, 0.1, 0.99, succeed, mask, tf_now, state);
 printf("succeed? %d\n", succeed);
       while (succeed) {
-        std::vector<size_t> next_idcs;
+        std::vector<size_t> idcs_next;
         std::vector<size_t> inlier_idcs;
         for (size_t mask_idx = 0; mask_idx < mask.size(); ++mask_idx) {
           if (mask[mask_idx] == 1) {
-            inlier_idcs.emplace_back(now_idcs[mask_idx]);
+            inlier_idcs.emplace_back(idcs_now[mask_idx]);
           }
           else {
-            next_idcs.emplace_back(now_idcs[mask_idx]);
+            idcs_next.emplace_back(idcs_now[mask_idx]);
           }
         }
 
         pts_labels[graph_idx].emplace_back(inlier_idcs);
 
 printf("next suggestion : ");
-for(int i = 0; i<next_idcs.size(); ++i)
-printf("%d ", next_idcs[i]);
+for(int i = 0; i<idcs_next.size(); ++i)
+printf("%d ", idcs_next[i]);
 printf("\n");
 
-        if (next_idcs.size() < 3) {
-          pts_labels[graph_idx].emplace_back(next_idcs);
+        if (idcs_next.size() < 3) {
+          pts_labels[graph_idx].emplace_back(idcs_next);
           break;
         }
 
-        now_idcs = next_idcs;
-        mask = std::vector<uchar> (next_idcs.size(), 0);
-        ransac_tf(*pts_before, *pts_after, next_idcs, 0.2, 0.99, succeed, mask);
+        idcs_now = idcs_next;
+        mask = std::vector<uchar> (idcs_next.size(), 0);
+        Eigen::Matrix4f tf_next;
+        ransac_tf(*pts_before, *pts_after, idcs_next, 0.1, 0.99, succeed, mask, tf_next, state);
 
         if (!succeed) {
-          pts_labels[graph_idx].emplace_back(next_idcs);
+          pts_labels[graph_idx].emplace_back(idcs_next);
         } 
       }
     }
@@ -456,6 +507,7 @@ printf("\n");
 
 
   }
+
 cv::imshow("test", test_l);
 cv::waitKey(1);
 }
@@ -680,30 +732,27 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     message.masks.at(i) = mask_temp;
   }
 
-
-  auto R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
-  auto p_IBinG = Eigen::Vector3d(state->_imu->pos());
   auto R_IBtoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
   auto R_IBtoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
   auto p_IBinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
   auto p_IBinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
-  std::vector<std::vector<cv::Point2f>> klt_passed_pts_C0(2);
-  std::vector<std::vector<cv::Point2f>> klt_passed_pts_C1(2);
+  std::vector<std::vector<cv::Point2f>> tracked_raw_pts_C0(2);
+  std::vector<std::vector<cv::Point2f>> tracked_raw_pts_C1(2);
   // Perform our feature tracking!
   if (params.use_stereo) {
     auto R_C0toC1 = R_IBtoC1 * R_IBtoC0.transpose();
     auto p_C0inC1 = - R_C0toC1 * p_IBinC0 + p_IBinC1;
-    trackFEATS->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1, R_C0toC1, p_C0inC1);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, R_C0toC1, p_C0inC1);
   }
   else {
-    trackFEATS->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1);
   }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
+    trackARUCO->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -720,7 +769,10 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
 printf("mot from zupt\n");
-      track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1);
+
+      track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1);
+      state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
+      state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
       return;
     }
   }
@@ -741,7 +793,9 @@ printf("mot from zupt\n");
 
   // select dynamic pts
 printf("mot from normal\n");
-  track_moving_objects(message, state, R_IBtoC0, R_GtoIB, R_IBtoC1, p_IBinC0, p_IBinG, p_IBinC1, klt_passed_pts_C0, klt_passed_pts_C1);
+  track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1);
+  state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
+  state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
