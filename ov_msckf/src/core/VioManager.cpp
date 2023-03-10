@@ -399,6 +399,7 @@ printf("fail\n");
     L2_2D *= fx/max_elements;
     z_mean /= max_elements;
     double th_2D = 20/z_mean + 15/max_elements;
+    double th_3D = 0.15 + 0.1/max_elements;
 
     // Eigen::Matrix3d R_C0BtoC0A = best_tf.block<3, 3>(0, 0).cast<double>();
     // Eigen::Vector3d p_C0BinC0A = best_tf.block<3, 1>(0, 3).cast<double>();
@@ -424,7 +425,7 @@ printf("3d : %f\n", weighted_L2_3D);
 printf("2d : %f\n", L2_2D);
 printf("z : %f, th %f\n", z_mean, th_2D);
 printf("pass? %d\n", weighted_L2_3D > 0.1 && L2_2D > th_2D);
-if(z_mean > 0.0 && weighted_L2_3D > 0.15 && L2_2D > th_2D)
+if(z_mean > 0.0 && weighted_L2_3D > th_3D && L2_2D > th_2D)
 {
   auto calib = state->_cam_intrinsics[0];
   cv::Point2d q;
@@ -439,7 +440,7 @@ if(z_mean > 0.0 && weighted_L2_3D > 0.15 && L2_2D > th_2D)
   q = cv::Point2d(calib->value()(0) * pts_after.at(idx).x/pts_after.at(idx).z+calib->value()(2), calib->value()(1)*pts_after.at(idx).y/pts_after.at(idx).z+calib->value()(3));
   cv::circle(test_l, q, 15, cv::Scalar(0, 255, 0), 3);
   s1 = std::string();
-  s1 += "3D : " + std::to_string(weighted_L2_3D) + " / " + std::to_string(0.15);
+  s1 += "3D : " + std::to_string(weighted_L2_3D) + " / " + std::to_string(th_3D);
   s2 = std::string();
   s2 += "2D : " + std::to_string(L2_2D) + " / " + std::to_string(th_2D);
   }

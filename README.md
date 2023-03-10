@@ -88,7 +88,7 @@ This algorithm has a time complexity of `O(N log N)`, where `N` is the number of
 
 - **borderless white points** (index 32, 33, ...): nodes in the outlier graphs
 
-- **bounded points** (index 36, 21, 41, ...): nodes in the inline graphs
+- **bounded points** (index 36, 21, 41, ...): nodes in the inlier graphs
 
 - **bounded white points** (index 45): outliers in the inlier graphs
 
@@ -129,13 +129,13 @@ When **dealing with a large number of input points**, I simplify the SVD registr
 
 To determine whether the points are dynamic or not, I calculate the difference for all points and divide it by the number of points. Then, I compare this value to the threshold in both 3D and 2D. Here are the details:
 
-- Threshold in 3D: $\alpha + {{\beta}\over{N}}$.
-- Threshold in 2D: ${{\gamma}\over{\bar{z}}} + {{\delta}\over{N}}$
+- **Threshold in 3D**: $\alpha + {{\beta}\over{N}}$.
+- **Threshold in 2D**: ${{\gamma}\over{\bar{z}}} + {{\delta}\over{N}}$
 - $\alpha, \beta, \gamma, \delta$: constants
 - $N$ : number of points
 - $\bar{z}$: average depth of the points
 
-When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For the thresholds, **the second term helps to reduce uncertainty**, as using fewer points makes it unlikely that the mean error is non-zero based on **the central limit theorem**.
+When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For the thresholds, **the second term helps to reduce uncertainty**, as using fewer points makes it unlikely that the mean error is non-zero based on **the chi square distribution**.
 
 For 2D comparisons, **the first term compensates** for the disadvantage of comparing differences in 2D for **points closer to the camera**. This is because the **image projection** of an object is **inversely proportional to its depth**. The second term serves the same purpose as in the 3D case.
 
