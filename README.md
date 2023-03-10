@@ -135,7 +135,7 @@ To determine whether the points are dynamic or not, I calculate the difference f
 - $N$ : number of points
 - $\bar{z}$: average depth of the points
 
-When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For thresholds, **the second term helps to reduce uncertainty**, as using fewer points increases the probability of **overfitting based on the MLE**.
+When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For thresholds, **the second term helps to reduce uncertainty**, as using fewer points increases the probability of **overfitting based on the MLE**. More observations increase the probability of getting a distribution close to the truth by the Central Limit Theorem.
 
 For 2D comparisons, **the first term compensates** for the disadvantage of comparing differences in 2D for **points closer to the camera**. This is because the **image projection** of an object is **inversely proportional to its depth**. The second term serves the same purpose as in the 3D case.
 
