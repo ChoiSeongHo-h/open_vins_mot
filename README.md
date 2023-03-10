@@ -59,7 +59,7 @@ Although it's possible to detect dynamic objects by applying RANSAC on the funda
 - The consensus of the fundamental matrix is based only on the distance to the epipolar line, i.e., the epipolar constraint.
 - RANSAC relies on probabilities.
 
-**The consensus of the fundamental matrix** means that the distance of the point to the epipolar line is below a threshold. The problem with this is that there are **additional degrees of freedom in the direction of the epipolar line**, which can lead to inaccuracies. In contrast, **reprojection error and the comparison of predictions and observations** in 3D involve a **point-to-point comparison**, which eliminates any remaining degrees of freedom.
+**The consensus of the fundamental matrix** means that the distance of the point to the epipolar line is below a threshold. The problem with this is that there are **additional dof in the direction of the epipolar line**, which can lead to inaccuracies. In contrast, **reprojection error and the comparison of predictions and observations** in 3D involve a **point-to-point comparison**, which eliminates any remaining dof.
 
 I penalize the z direction in the 3D comparison to compensate for the inaccurate depth of the stereo camera.
 
@@ -135,7 +135,7 @@ To determine whether the points are dynamic or not, I calculate the difference f
 - $N$ : number of points
 - $\bar{z}$: average depth of the points
 
-When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For the thresholds, **the second term helps to reduce uncertainty**, as using fewer points makes it unlikely that the mean error is non-zero based on **the chi square distribution**.
+When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For thresholds, **the second term helps to reduce uncertainty**, as using fewer points increases the probability of **overfitting based on the MLE**.
 
 For 2D comparisons, **the first term compensates** for the disadvantage of comparing differences in 2D for **points closer to the camera**. This is because the **image projection** of an object is **inversely proportional to its depth**. The second term serves the same purpose as in the 3D case.
 
