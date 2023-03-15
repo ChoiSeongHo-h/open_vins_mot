@@ -243,70 +243,164 @@ void get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &state, const std:
   raw_pts3d_pred = T_C0BtoC0A_cv * raw_pts3d_before;
 }
 
+bool get_sampled_idcs(std::vector<size_t> &sampled_idcs, std::vector<size_t> &rnd_base, const std::vector<size_t> &idcs, const size_t k, std::set<std::vector<size_t>> &used) {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  sampled_idcs.resize(k);
+  
+  std::shuffle(rnd_base.begin(), rnd_base.end(), gen);
+  for (size_t k_i = 0; k_i<k; ++k_i) {
+    sampled_idcs[k_i] = idcs[rnd_base[k_i]];
+  }
+  std::sort(sampled_idcs.begin(), sampled_idcs.end());
+
+  if (used.find(sampled_idcs) == used.end()) {
+    used.emplace(sampled_idcs);
+    return true;
+  }
+  else {
+    return false;
+  }
+}
+
+int get_max_iters(const double probability, const double outliers_ratio, const size_t k, const std::shared_ptr<ov_msckf::State> &state, const size_t num_idcs) {
+  auto it = state->_iter_table.find(num_idcs);
+  if (it == state->_iter_table.end()) {
+    int max_iters = log(1 - probability) / log(1 - pow(1 - 0.3, k));
+    if (num_idcs < 10) {
+      max_iters = std::min(max_iters, nCr(num_idcs, k));
+    }
+
+    state->_iter_table.emplace(num_idcs, max_iters);
+    return max_iters;
+  }
+  
+  return it->second;
+}
+
+bool is_dynamic_tf(const size_t num_idcs, std::vector<uchar> &mask_out, const std::vector<size_t> &idcs, const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after, const std::vector<float> &full_size_L2_3D_vec, const int best_num_inliers, Eigen::Matrix4f &inliers_tf, const Eigen::Matrix4d &T_C0BtoC0A, const std::shared_ptr<ov_msckf::State> &state) {
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_before_temp(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_after_temp(new pcl::PointCloud<pcl::PointXYZ>);
+  std::vector<float> L2_3D_vec_temp;
+  for (size_t full_idx = 0; full_idx<num_idcs; ++full_idx) {
+    if (mask_out[full_idx] == 0)
+      continue;
+
+    size_t pts_idx = idcs[full_idx];
+    inliers_before_temp->emplace_back(pts_before[pts_idx]);
+    inliers_after_temp->emplace_back(pts_after[pts_idx]);
+    L2_3D_vec_temp.emplace_back(full_size_L2_3D_vec[full_idx]);
+  }
+
+  std::vector<float> sorting_idx(L2_3D_vec_temp);
+  std::iota(sorting_idx.begin(), sorting_idx.end(), 0);
+  std::sort(sorting_idx.begin(), sorting_idx.end(), 
+            [&](float i0, float i1) {return L2_3D_vec_temp[i0] < L2_3D_vec_temp[i1];});
+
+  int max_elements = std::min(best_num_inliers, 10);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_before(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_after(new pcl::PointCloud<pcl::PointXYZ>);
+  std::vector<float> L2_3D_vec;
+  inliers_before->resize(max_elements);
+  inliers_after->resize(max_elements);
+  L2_3D_vec.resize(max_elements);
+  for (size_t idx_to = 0; idx_to<(size_t)max_elements; ++idx_to)
+  {
+    size_t idx_from = sorting_idx[idx_to];
+    inliers_before->at(idx_to) = inliers_before_temp->at(idx_from);
+    inliers_after->at(idx_to) = inliers_after_temp->at(idx_from);
+    L2_3D_vec[idx_to] = L2_3D_vec_temp[idx_from];
+  }
+
+  pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
+  svd.estimateRigidTransformation(*inliers_before, *inliers_after, inliers_tf);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_pts(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::transformPointCloud(*inliers_before, *inliers_pred_pts, inliers_tf);
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_ego(new pcl::PointCloud<pcl::PointXYZ>);
+  Eigen::Matrix4f T_C0BtoC0A_f = T_C0BtoC0A.cast<float>();
+  pcl::transformPointCloud(*inliers_before, *inliers_pred_ego, T_C0BtoC0A_f);
+
+  double weighted_L2_3D = 0.0;
+  double L2_2D = 0.0;
+  double z_mean = 0.0;
+  for (size_t i = 0; i<(size_t)max_elements; ++i) {
+    Eigen::Vector3f weighted_diff_3D = inliers_pred_pts->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
+    weighted_diff_3D.block<1, 1>(2, 0) *= (1/1.5);
+    weighted_L2_3D += (double)weighted_diff_3D.norm();
+    double u_pred_ego = (double)inliers_pred_ego->at(i).x/(double)inliers_pred_ego->at(i).z;
+    double v_pred_ego = (double)inliers_pred_ego->at(i).y/(double)inliers_pred_ego->at(i).z;
+    double u_pred_pts = (double)inliers_pred_pts->at(i).x/(double)inliers_pred_pts->at(i).z;
+    double v_pred_pts = (double)inliers_pred_pts->at(i).y/(double)inliers_pred_pts->at(i).z;
+    auto pt_pred_ego = cv::Point2d(u_pred_ego, v_pred_ego);
+    auto pt_pred_pts = cv::Point2d(u_pred_pts, v_pred_pts);
+    cv::Point2d diff_2D = pt_pred_ego-pt_pred_pts;
+    L2_2D += cv::norm(diff_2D);
+    z_mean += inliers_pred_pts->at(i).z;
+  }
+  auto fx = state->_cam_intrinsics[0]->value()(0);
+  weighted_L2_3D /= max_elements;
+  L2_2D *= fx/max_elements;
+  z_mean /= max_elements;
+  double th_2D = 20/z_mean + 15/max_elements;
+  double th_3D = 0.15 + 0.1/max_elements;
+
+printf("3d : %f / %f\n", weighted_L2_3D, th_3D);
+printf("2d : %f / %f\n", L2_2D, th_2D);
+printf("dynamic? %d\n", z_mean > 0.0 && weighted_L2_3D > th_3D && L2_2D > th_2D);
+  if(z_mean > 0.0 && weighted_L2_3D > th_3D && L2_2D > th_2D) {
+    return true;
+  }
+
+  return false;
+}
+
 void ransac_tf(const pcl::PointCloud<pcl::PointXYZ> &pts_before, const pcl::PointCloud<pcl::PointXYZ> &pts_after,
-                       const std::vector<size_t> &idcs, const float th_L2_3D_ransac, const float probability, bool &succeed, std::vector<uchar> &mask_out, Eigen::Matrix4f &inliers_tf, const Eigen::Matrix4d &T_C0BtoC0A, cv::Mat &test_l, const std::shared_ptr<ov_msckf::State> &state) {
+                       const std::vector<size_t> &idcs, const float th_L2_3D_ransac, const double probability, bool &succeed, bool &dynamic, std::vector<uchar> &mask_out, Eigen::Matrix4f &inliers_tf, const Eigen::Matrix4d &T_C0BtoC0A, const std::shared_ptr<ov_msckf::State> &state) {
 printf("input : ");
 for(int i = 0;i<idcs.size(); ++i)
 printf("%d ", idcs[i]);
 printf("\n");
   // Initialize the RANSAC parameters
   // Number of points to draw for each iteration
-  const int k = 3; 
-  int max_iters = log(1 - probability) / log(1 - pow(1 - 0.3, k));
-  // will modify this
+  const size_t k = 3; 
   size_t num_idcs = idcs.size();
-  if (num_idcs < 10) {
-    max_iters = std::min(max_iters, nCr(num_idcs, k));
-  }
+  int max_iters = get_max_iters(probability, 0.3, k, state, num_idcs);
 printf("max_iters %d \n", max_iters);
   int best_num_inliers = -1;
-  std::vector<uchar> inliers_mask(idcs.size(), 0);
-  std::vector<float> full_size_L2_3D_vec(idcs.size(), std::numeric_limits<float>::max());
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  
-  std::vector<int> res_idcs(k);
-  std::vector<int> sampled_idcs(k);
-  std::set<std::vector<int>> used;
-  std::vector<int> rnd_base(idcs.size());
+  std::vector<uchar> inliers_mask;
+  std::vector<float> full_size_L2_3D_vec;
+  std::vector<size_t> sampled_idcs;
+  std::vector<size_t> rnd_base(idcs.size());
   std::iota(rnd_base.begin(), rnd_base.end(), 0);
+  std::set<std::vector<size_t>> used;
 
   // Iterate for a maximum number of iterations
   int fail_cnt = 0;
-  for (size_t iter = 0; iter < (size_t)max_iters && fail_cnt<50; iter++) {
-    std::shuffle(rnd_base.begin(), rnd_base.end(), gen);
-    for (size_t k_i = 0; k_i<k; ++k_i) {
-      sampled_idcs[k_i] = idcs[rnd_base[k_i]];
-    }
-    std::sort(sampled_idcs.begin(), sampled_idcs.end());
-    if (used.find(sampled_idcs) != used.end()) {
+  for (int iter = 0; iter < max_iters && fail_cnt<50; iter++) {
+    bool sample_succeed = get_sampled_idcs(sampled_idcs, rnd_base, idcs, k, used);
+    if (!sample_succeed) {
         --iter;
-printf("fail\n");
         ++fail_cnt;
         continue;
     }
-    used.emplace(sampled_idcs);
-// printf("suggestion idcs \n");
+
     // Estimate the transformation using the k random points
     pcl::PointCloud<pcl::PointXYZ>::Ptr sampled_pts_before(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr sampled_pts_after(new pcl::PointCloud<pcl::PointXYZ>);
     for (size_t i = 0; i<k; ++i) {
       sampled_pts_before->emplace_back(pts_before[sampled_idcs[i]]);
       sampled_pts_after->emplace_back(pts_after[sampled_idcs[i]]);
-// printf("%d ", sample_idcs[i]);
     }
-// printf("\n");
     pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
     Eigen::Matrix4f sampled_pts_tf;
     svd.estimateRigidTransformation(*sampled_pts_before, *sampled_pts_after, sampled_pts_tf);
-// std::cout<<transformation<<std::endl;
 
     // Evaluate the transformation using the available points
-    int num_inliers = 0;
-
     pcl::PointCloud<pcl::PointXYZ>::Ptr sampled_pts_pred(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::transformPointCloud(pts_before, *sampled_pts_pred, sampled_pts_tf);
 
+    int num_inliers = 0;
     inliers_mask = std::vector<uchar>(idcs.size(), 0);
     full_size_L2_3D_vec = std::vector<float>(idcs.size(), std::numeric_limits<float>::max());
     for (size_t i = 0; i<num_idcs; ++i) {
@@ -321,10 +415,8 @@ printf("fail\n");
     // Update the best transformation if the current transformation has more inliers
     if (num_inliers > best_num_inliers) {
       best_num_inliers = num_inliers;
-      res_idcs = sampled_idcs;
       mask_out = inliers_mask;
     }
-
   }
   
   if (best_num_inliers >= k) {
@@ -334,144 +426,79 @@ printf("fail\n");
     succeed = false;
   }
 
-  if (succeed) {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_before_temp(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_after_temp(new pcl::PointCloud<pcl::PointXYZ>);
-    std::vector<float> L2_3D_vec_temp;
-    for (size_t full_idx = 0; full_idx<num_idcs; ++full_idx) {
-      if (mask_out[full_idx] == 0)
-        continue;
-
-      size_t pts_idx = idcs[full_idx];
-      inliers_before_temp->emplace_back(pts_before[pts_idx]);
-      inliers_after_temp->emplace_back(pts_after[pts_idx]);
-      L2_3D_vec_temp.emplace_back(full_size_L2_3D_vec[full_idx]);
-    }
-
-    std::vector<float> sorting_idx(L2_3D_vec_temp);
-    std::iota(sorting_idx.begin(), sorting_idx.end(), 0);
-    std::sort(sorting_idx.begin(), sorting_idx.end(), 
-              [&](float i0, float i1) {return L2_3D_vec_temp[i0] < L2_3D_vec_temp[i1];});
-
-    int max_elements = std::min(best_num_inliers, 10);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_before(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_after(new pcl::PointCloud<pcl::PointXYZ>);
-    std::vector<float> L2_3D_vec;
-    inliers_before->resize(max_elements);
-    inliers_after->resize(max_elements);
-    L2_3D_vec.resize(max_elements);
-    for (size_t idx_to = 0; idx_to<(size_t)max_elements; ++idx_to)
-    {
-        size_t idx_from = sorting_idx[idx_to];
-        inliers_before->at(idx_to) = inliers_before_temp->at(idx_from);
-        inliers_after->at(idx_to) = inliers_after_temp->at(idx_from);
-        L2_3D_vec[idx_to] = L2_3D_vec_temp[idx_from];
-    }
-
-    pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
-    svd.estimateRigidTransformation(*inliers_before, *inliers_after, inliers_tf);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_pts(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::transformPointCloud(*inliers_before, *inliers_pred_pts, inliers_tf);
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_ego(new pcl::PointCloud<pcl::PointXYZ>);
-    Eigen::Matrix4f T_C0BtoC0A_f = T_C0BtoC0A.cast<float>();
-    pcl::transformPointCloud(*inliers_before, *inliers_pred_ego, T_C0BtoC0A_f);
-
-    double weighted_L2_3D = 0.0;
-    double L2_2D = 0.0;
-    double z_mean = 0.0;
-    for (size_t i = 0; i<(size_t)max_elements; ++i) {
-      Eigen::Vector3f weighted_diff_3D = inliers_pred_pts->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
-      weighted_diff_3D.block<1, 1>(2, 0) *= (1/1.5);
-      weighted_L2_3D += (double)weighted_diff_3D.norm();
-      double u_pred_ego = (double)inliers_pred_ego->at(i).x/(double)inliers_pred_ego->at(i).z;
-      double v_pred_ego = (double)inliers_pred_ego->at(i).y/(double)inliers_pred_ego->at(i).z;
-      double u_pred_pts = (double)inliers_pred_pts->at(i).x/(double)inliers_pred_pts->at(i).z;
-      double v_pred_pts = (double)inliers_pred_pts->at(i).y/(double)inliers_pred_pts->at(i).z;
-      auto pt_pred_ego = cv::Point2d(u_pred_ego, v_pred_ego);
-      auto pt_pred_pts = cv::Point2d(u_pred_pts, v_pred_pts);
-      cv::Point2d diff_2D = pt_pred_ego-pt_pred_pts;
-      L2_2D += cv::norm(diff_2D);
-      z_mean += inliers_pred_pts->at(i).z;
-    }
-    auto fx = state->_cam_intrinsics[0]->value()(0);
-    weighted_L2_3D /= max_elements;
-    L2_2D *= fx/max_elements;
-    z_mean /= max_elements;
-    double th_2D = 20/z_mean + 15/max_elements;
-    double th_3D = 0.15 + 0.1/max_elements;
-
-    // Eigen::Matrix3d R_C0BtoC0A = best_tf.block<3, 3>(0, 0).cast<double>();
-    // Eigen::Vector3d p_C0BinC0A = best_tf.block<3, 1>(0, 3).cast<double>();
-
-    // auto R_ItoC0 = Eigen::Matrix3d(state->_calib_IMUtoCAM[0]->Rot());
-    // auto p_IinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
-
-    // Eigen::Vector3d p_GinIB = -state->_R_GtoIB * state->_p_IBinG;
-    // Eigen::Vector3d p_GinC0B = R_ItoC0 * p_GinIB + p_IinC0;
-    // Eigen::Vector3d pred = R_C0BtoC0A * p_GinC0B + p_C0BinC0A;
-
-    // Eigen::Vector3d p_GinIA = -state->_imu->Rot() * state->_imu->pos();
-    // Eigen::Vector3d p_GinC0A = R_ItoC0 * p_GinIA + p_IinC0;
-
-//     double L2 = (pred - p_GinC0A).norm();
-// printf("pred :\n");
-// std::cout<<pred<<std::endl;
-// printf("now :\n");
-// std::cout<<p_GinC0A<<std::endl;
-// printf("before :\n");
-// std::cout<<p_GinC0B<<std::endl;
-printf("3d : %f\n", weighted_L2_3D);
-printf("2d : %f\n", L2_2D);
-printf("z : %f, th %f\n", z_mean, th_2D);
-printf("pass? %d\n", weighted_L2_3D > 0.1 && L2_2D > th_2D);
-if(z_mean > 0.0 && weighted_L2_3D > th_3D && L2_2D > th_2D)
-{
-  auto calib = state->_cam_intrinsics[0];
-  cv::Point2d q;
-  std::string s1;
-  std::string s2;
-  for(int i = 0; i<mask_out.size(); ++i)
-  {
-    if(mask_out[i] == 0)
-      continue;
-
-  int idx = idcs[i];
-  q = cv::Point2d(calib->value()(0) * pts_after.at(idx).x/pts_after.at(idx).z+calib->value()(2), calib->value()(1)*pts_after.at(idx).y/pts_after.at(idx).z+calib->value()(3));
-  cv::circle(test_l, q, 15, cv::Scalar(0, 255, 0), 3);
-  s1 = std::string();
-  s1 += "3D : " + std::to_string(weighted_L2_3D) + " / " + std::to_string(th_3D);
-  s2 = std::string();
-  s2 += "2D : " + std::to_string(L2_2D) + " / " + std::to_string(th_2D);
-  }
-  auto q1(q);
-  q.x += 30; 
-  q1.x += 30; 
-  q1.y += 30; 
-  cv::putText(test_l, s1, q, 1, 2, cv::Scalar(0, 255, 0), 2);
-  cv::putText(test_l, s2, q1, 1, 2, cv::Scalar(0, 255, 0), 2);
-}
-  }
-
-printf("res (%d ea)\n", best_num_inliers);
-for(int i = 0; i<3; ++i)
-printf("%d ", res_idcs[i]);
-printf("and ");
+printf("res (%d ea) :", best_num_inliers);
 for(int i = 0; i<mask_out.size(); ++i)
 {
   if(mask_out[i] == 1)
     printf("%d ", idcs[i]);
 }
 std::cout<<std::endl;
-// for(int i = 0; i<mask.size(); ++i)
-// {
-//   if(mask[i] == 1)
-//   {
-//     std::cout<<pts_before[idcs[i]]<<" ";
-//     std::cout<<pts_after[idcs[i]]<<std::endl;
-//   }
-// }
-  // Return the best transformation
+
+printf("succeed? %d\n", succeed);
+
+  if (succeed) {
+    dynamic = false;
+    dynamic = is_dynamic_tf(num_idcs, mask_out, idcs, pts_before, pts_after, full_size_L2_3D_vec, best_num_inliers, inliers_tf, T_C0BtoC0A, state);
+  }
+}
+
+void label_pts(std::vector<std::vector<std::vector<size_t>>> &labeled_idcs, std::vector<std::vector<char>> &labeled_states, std::vector<std::vector<Eigen::Matrix4f>> &labeled_tf, const std::vector<std::vector<size_t>> &graphed_idcs, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const Eigen::Matrix4d &T_C0BtoC0A, const std::shared_ptr<ov_msckf::State> &state) {
+  labeled_idcs = std::vector<std::vector<std::vector<size_t>>>(graphed_idcs.size());
+  labeled_states = std::vector<std::vector<char>>(graphed_idcs.size());
+  labeled_tf = std::vector<std::vector<Eigen::Matrix4f>>(graphed_idcs.size());
+  size_t num_graph = graphed_idcs.size();
+  for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
+    bool succeed = true;
+    bool dinamic = false;
+    std::vector<size_t> idcs_now = graphed_idcs[graph_idx];
+    std::vector<uchar> mask(graphed_idcs[graph_idx].size(), 0);
+    Eigen::Matrix4f tf_now;
+    ransac_tf(*pts_before, *pts_after, idcs_now, 0.1, 0.99, succeed, dinamic, mask, tf_now, T_C0BtoC0A, state);
+    while (succeed) {
+      std::vector<size_t> idcs_next;
+      std::vector<size_t> inlier_idcs;
+      for (size_t mask_idx = 0; mask_idx < mask.size(); ++mask_idx) {
+        if (mask[mask_idx] == 1) {
+          inlier_idcs.emplace_back(idcs_now[mask_idx]);
+        }
+        else {
+          idcs_next.emplace_back(idcs_now[mask_idx]);
+        }
+      }
+
+      labeled_idcs[graph_idx].emplace_back(inlier_idcs);
+      labeled_tf[graph_idx].emplace_back(tf_now);
+      if (dinamic) {
+        labeled_states[graph_idx].emplace_back(1);
+      }
+      else {
+        labeled_states[graph_idx].emplace_back(2);
+      }
+
+printf("next suggestion : ");
+for(int i = 0; i<idcs_next.size(); ++i)
+printf("%d ", idcs_next[i]);
+printf("\n");
+
+      if (idcs_next.size() < 3) {
+        labeled_idcs[graph_idx].emplace_back(idcs_next);
+        labeled_tf[graph_idx].emplace_back(Eigen::Matrix4f());
+        labeled_states[graph_idx].emplace_back(0);
+        break;
+      }
+
+      idcs_now = idcs_next;
+      mask = std::vector<uchar> (idcs_next.size(), 0);
+      Eigen::Matrix4f tf_next;
+      ransac_tf(*pts_before, *pts_after, idcs_next, 0.1, 0.99, succeed, dinamic, mask, tf_next, T_C0BtoC0A, state);
+
+      if (!succeed) {
+        labeled_idcs[graph_idx].emplace_back(idcs_next);
+        labeled_tf[graph_idx].emplace_back(Eigen::Matrix4f());
+        labeled_states[graph_idx].emplace_back(0);
+      } 
+    }
+  }
 }
 
 void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1) {
@@ -516,74 +543,34 @@ printf("%d ", graphed_idcs[i][j]);
 std::cout<<std::endl;
 }
 
-    std::vector<std::vector<std::vector<size_t>>> pts_labels(graphed_idcs.size());
-    size_t num_graph = graphed_idcs.size();
-    for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
-      bool succeed = true;
-      std::vector<size_t> idcs_now = graphed_idcs[graph_idx];
-      std::vector<uchar> mask(graphed_idcs[graph_idx].size(), 0);
-      Eigen::Matrix4f tf_now;
-      ransac_tf(*pts_before, *pts_after, idcs_now, 0.1, 0.99, succeed, mask, tf_now, T_C0BtoC0A, test_l, state);
-printf("succeed? %d\n", succeed);
-      while (succeed) {
-        std::vector<size_t> idcs_next;
-        std::vector<size_t> inlier_idcs;
-        for (size_t mask_idx = 0; mask_idx < mask.size(); ++mask_idx) {
-          if (mask[mask_idx] == 1) {
-            inlier_idcs.emplace_back(idcs_now[mask_idx]);
-          }
-          else {
-            idcs_next.emplace_back(idcs_now[mask_idx]);
-          }
-        }
-
-        pts_labels[graph_idx].emplace_back(inlier_idcs);
-
-printf("next suggestion : ");
-for(int i = 0; i<idcs_next.size(); ++i)
-printf("%d ", idcs_next[i]);
-printf("\n");
-
-        if (idcs_next.size() < 3) {
-          pts_labels[graph_idx].emplace_back(idcs_next);
-          break;
-        }
-
-        idcs_now = idcs_next;
-        mask = std::vector<uchar> (idcs_next.size(), 0);
-        Eigen::Matrix4f tf_next;
-        ransac_tf(*pts_before, *pts_after, idcs_next, 0.1, 0.99, succeed, mask, tf_next, T_C0BtoC0A, test_l, state);
-
-        if (!succeed) {
-          pts_labels[graph_idx].emplace_back(idcs_next);
-        } 
-      }
-    }
+    std::vector<std::vector<std::vector<size_t>>> labeled_idcs;
+    std::vector<std::vector<char>> labeled_states;
+    std::vector<std::vector<Eigen::Matrix4f>> labeled_tf;
+    label_pts(labeled_idcs, labeled_states, labeled_tf, graphed_idcs, pts_before, pts_after, T_C0BtoC0A, state);
 
 printf("labels\n");
-for(int i = 0; i<pts_labels.size(); ++i)
+for(int i = 0; i<labeled_idcs.size(); ++i)
 {
 printf("graph %d :\n", i);
-for(int j = 0; j<pts_labels[i].size(); ++j)
+for(int j = 0; j<labeled_idcs[i].size(); ++j)
 {
 auto label_color = randomColor();
-if(j == pts_labels[i].size()-1)
+if(labeled_states[i][j] != 1)
 label_color = cv::Scalar(255,255,255);
 printf("{");
-for(int k = 0; k<pts_labels[i][j].size(); ++k)
+for(size_t k = 0; k<labeled_idcs[i][j].size(); ++k)
 {
-printf("%d ", pts_labels[i][j][k]);
-int idx = pts_labels[i][j][k];
+printf("%d ", labeled_idcs[i][j][k]);
+int idx = labeled_idcs[i][j][k];
 auto q = cv::Point2d(calib->value()(0)*pts_now_viz[idx].x+calib->value()(2), calib->value()(1)*pts_now_viz[idx].y+calib->value()(3));
 cv::circle(test_l, q, 3, label_color, 3);
-cv::circle(test_l, q, 8, cv::Scalar(0,0,0), 2);
+if(labeled_states[i][j] == 1)
+cv::circle(test_l, q, 13, cv::Scalar(0,255,0), 2);
 }
-printf("}, ");
+printf("}(%d) ", labeled_states[i][j]);
 }
 printf("\n");
 }
-
-
 
   }
 
