@@ -90,6 +90,9 @@ public:
   Eigen::Matrix3d _R_GtoIB;
   Eigen::Vector3d _p_IBinG;
   std::unordered_map<int, int> _iter_table;
+  std::unordered_map<size_t, size_t> _raw_idcs_table_before;
+  size_t _num_labels_before;
+
 
   /// Map between imaging times and clone poses (q_GtoIi, p_IiinG)
   std::map<double, std::shared_ptr<ov_type::PoseJPL>> _clones_IMU;

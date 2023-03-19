@@ -195,7 +195,8 @@ int main(int argc, char **argv) {
     message.images.push_back(frame);
     message.masks.push_back(cv::Mat::zeros(cv::Size(frame.cols, frame.rows), CV_8UC1));
     std::vector<std::vector<cv::Point2f>> klt_passed_pts_C0, klt_passed_pts_C1;
-    extractor->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
+    std::vector<size_t> raw_idcs;
+    extractor->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1, raw_idcs);
 
     // Display the resulting tracks
     cv::Mat img_active, img_history;

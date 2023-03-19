@@ -48,7 +48,7 @@ public:
    * @warning This function should not be used!! Use @ref feed_measurement_simulation() instead.
    * @param message Contains our timestamp, images, and camera ids
    */
-  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override {
+  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override {
     PRINT_ERROR(RED "[SIM]: SIM TRACKER FEED NEW CAMERA CALLED!!!\n" RESET);
     PRINT_ERROR(RED "[SIM]: THIS SHOULD NEVER HAPPEN!\n" RESET);
     std::exit(EXIT_FAILURE);

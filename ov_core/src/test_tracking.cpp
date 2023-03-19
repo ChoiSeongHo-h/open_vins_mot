@@ -313,7 +313,8 @@ void handle_stereo(double time0, double time1, cv::Mat img0, cv::Mat img1) {
     message.masks.push_back(mask);
   }
   std::vector<std::vector<cv::Point2f>> klt_passed_pts_C0, klt_passed_pts_C1;
-  extractor->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1);
+  std::vector<size_t> raw_idcs;
+  extractor->feed_new_camera(message, klt_passed_pts_C0, klt_passed_pts_C1, raw_idcs);
 
   // Display the resulting tracks
   cv::Mat img_active, img_history;

@@ -56,6 +56,64 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
+void get_hungarian_correspondences(const std::vector<std::vector<int>> &cost, std::vector<std::pair<size_t, size_t>> &correspondences) {
+  int n = cost.size();
+  int m = cost[0].size();
+  std::vector<int> u(n+1);
+  std::vector<int> v(m+1);
+  std::vector<int> p(m+1);
+  std::vector<int> way(m+1);
+  const int INF = std::numeric_limits<int>::max();
+
+  for (int i = 1; i <= n; ++i) {
+    p[0] = i;
+    int j0 = 0;
+    std::vector<int> minv(m+1, INF);
+    std::vector<bool> used(m+1, false);
+    do {
+        used[j0] = true;
+        int i0 = p[j0];
+        int delta = INF;
+        int j1;
+        for (int j = 1; j <= m; ++j) {
+          if (used[j])
+            continue;
+
+          int cur = cost[i0-1][j-1] - u[i0] - v[j];
+          if (cur < minv[j]) {
+            minv[j] = cur;
+            way[j] = j0;
+          }
+          if (minv[j] < delta) {
+            delta = minv[j];
+            j1 = j;
+          }
+        }
+        for (int j = 0; j <= m; ++j) {
+          if (used[j]) {
+            u[p[j]] += delta;
+            v[j] -= delta;
+          } else {
+            minv[j] -= delta;
+          }
+        }
+        j0 = j1;
+      } while (p[j0] != 0);
+
+      do {
+        int j1 = way[j0];
+        p[j0] = p[j1];
+        j0 = j1;
+      } while (j0 != 0);
+  }
+
+  for (int j = 1; j <= m; ++j) {
+    if (p[j] > 0) {
+      correspondences.emplace_back(std::make_pair(size_t(p[j]-1), size_t(j-1)));
+    }
+  }
+}
+
 cv::Scalar randomColor() {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -79,12 +137,12 @@ int nCr (const int n, const int r) {
     return fact(n) / (fact(r) * fact(n - r));
 }
 
-void serialize_graph(std::vector<std::vector<size_t>> &graph, const size_t num_pts, std::vector<std::vector<size_t>> &graphed_idcs) {
+void serialize_graphs(std::vector<std::vector<size_t>> &graphs, const size_t num_pts, std::vector<std::vector<size_t>> &graphed_idcs) {
   graphed_idcs = std::vector<std::vector<size_t>>(1);
   const size_t min_num_pts = 3;
   std::vector<bool> emplaced(num_pts, false);
   for (size_t i = 0; i<num_pts; ++i) {
-    if (graph[i].empty() || emplaced[i])
+    if (graphs[i].empty() || emplaced[i])
       continue;
 
     size_t num_pts = 0;
@@ -97,7 +155,7 @@ void serialize_graph(std::vector<std::vector<size_t>> &graph, const size_t num_p
 
       ++num_pts;
       graphed_idcs.back().emplace_back(idx_now);
-      for (auto next_idx : graph[idx_now]) {
+      for (auto next_idx : graphs[idx_now]) {
         if (!emplaced[next_idx]) {
           emplaced[next_idx] = true;
           stack.emplace(next_idx);
@@ -114,8 +172,8 @@ void serialize_graph(std::vector<std::vector<size_t>> &graph, const size_t num_p
     graphed_idcs.pop_back();
 }
 
-void make_graph(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const size_t num_pts, const size_t num_nearest, std::vector<std::vector<size_t>> &graph, cv::Mat &test_l, const std::shared_ptr<Vec> &calib, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
-  graph = std::vector<std::vector<size_t>>(num_pts);
+void make_graphs(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const size_t num_pts, const size_t num_nearest, std::vector<std::vector<size_t>> &graphs, cv::Mat &test_l, const std::shared_ptr<Vec> &calib, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
+  graphs = std::vector<std::vector<size_t>>(num_pts);
   pcl::KdTreeFLANN<pcl::PointXYZ> kd_tree;
   kd_tree.setInputCloud(pts_after);
   for (size_t i = 0; i<num_pts; ++i) {
@@ -129,8 +187,8 @@ auto from = cv::Point2d(calib->value()(0)*pts_now_viz[i].x+calib->value()(2), ca
     for (size_t j = 0; j<= num_nearest; ++j) {
       // Graph only points that are close in distance and not query points
       if (dists[j] < 2.0 && (size_t)idcs[j] != i) {
-        graph[i].emplace_back((size_t)idcs[j]);
-        graph[idcs[j]].emplace_back(i);
+        graphs[i].emplace_back((size_t)idcs[j]);
+        graphs[idcs[j]].emplace_back(i);
 auto from_before = cv::Point2d(calib->value()(0)*pts_before_viz[i].x+calib->value()(2), calib->value()(1)*pts_before_viz[i].y+calib->value()(3));
 cv::arrowedLine(test_l, from_before, from, cv::Scalar(255,0,0), 2);
 cv::putText(test_l, std::to_string(i), from, 1, 2, cv::Scalar(0,0,255), 2);
@@ -145,7 +203,7 @@ cv::circle(test_l, to, 3, cv::Scalar(255,255,255), 3);
   }
 }
 
-void reject_static_pts(const std::shared_ptr<Vec> &calib, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const cv::Mat &raw_pts3d_before, const cv::Mat &raw_pts3d_after, const cv::Mat &raw_pts3d_pred, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, cv::Mat &test_l, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
+void reject_static_pts(const std::shared_ptr<Vec> &calib, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, std::vector<size_t> &raw_idcs, const cv::Mat &raw_pts3d_before, const cv::Mat &raw_pts3d_after, const cv::Mat &raw_pts3d_pred, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, const std::vector<size_t> &raw_idcs_raw, cv::Mat &test_l, std::vector<cv::Point2d> &pts_now_viz, std::vector<cv::Point2d> &pts_before_viz) {
   pts_after = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
   pts_before = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
   size_t num_pts = raw_pts3d_before.cols;
@@ -172,6 +230,7 @@ void reject_static_pts(const std::shared_ptr<Vec> &calib, pcl::PointCloud<pcl::P
       double z_before = raw_pts3d_before.at<double>(2, i)/raw_pts3d_before.at<double>(3, i);
       pts_after->emplace_back(pcl::PointXYZ{(float)x_after, (float)y_after, (float)z_after});
       pts_before->emplace_back(pcl::PointXYZ{(float)x_before, (float)y_before, (float)z_before});
+      raw_idcs.emplace_back(raw_idcs_raw[i]);
 pts_now_viz.emplace_back(cv::Point2d((double)raw_pts_C0[1][i].x, (double)raw_pts_C0[1][i].y));
 pts_before_viz.emplace_back(cv::Point2d((double)raw_pts_C0[0][i].x, (double)raw_pts_C0[0][i].y));
     }
@@ -442,10 +501,10 @@ printf("succeed? %d\n", succeed);
   }
 }
 
-void label_pts(std::vector<std::vector<std::vector<size_t>>> &labeled_idcs, std::vector<std::vector<char>> &labeled_states, std::vector<std::vector<Eigen::Matrix4f>> &labeled_tf, const std::vector<std::vector<size_t>> &graphed_idcs, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const Eigen::Matrix4d &T_C0BtoC0A, const std::shared_ptr<ov_msckf::State> &state) {
-  labeled_idcs = std::vector<std::vector<std::vector<size_t>>>(graphed_idcs.size());
-  labeled_states = std::vector<std::vector<char>>(graphed_idcs.size());
-  labeled_tf = std::vector<std::vector<Eigen::Matrix4f>>(graphed_idcs.size());
+void label_pts(std::vector<std::vector<std::vector<size_t>>> &labeled_all_idcs, std::vector<std::vector<char>> &labeled_all_states, std::vector<std::vector<Eigen::Matrix4f>> &labeled_all_tf, const std::vector<std::vector<size_t>> &graphed_idcs, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_before, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pts_after, const Eigen::Matrix4d &T_C0BtoC0A, const std::shared_ptr<ov_msckf::State> &state) {
+  labeled_all_idcs = std::vector<std::vector<std::vector<size_t>>>(graphed_idcs.size());
+  labeled_all_states = std::vector<std::vector<char>>(graphed_idcs.size());
+  labeled_all_tf = std::vector<std::vector<Eigen::Matrix4f>>(graphed_idcs.size());
   size_t num_graph = graphed_idcs.size();
   for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
     bool succeed = true;
@@ -466,13 +525,13 @@ void label_pts(std::vector<std::vector<std::vector<size_t>>> &labeled_idcs, std:
         }
       }
 
-      labeled_idcs[graph_idx].emplace_back(inlier_idcs);
-      labeled_tf[graph_idx].emplace_back(tf_now);
+      labeled_all_idcs[graph_idx].emplace_back(inlier_idcs);
+      labeled_all_tf[graph_idx].emplace_back(tf_now);
       if (dinamic) {
-        labeled_states[graph_idx].emplace_back(1);
+        labeled_all_states[graph_idx].emplace_back(1);
       }
       else {
-        labeled_states[graph_idx].emplace_back(2);
+        labeled_all_states[graph_idx].emplace_back(2);
       }
 
 printf("next suggestion : ");
@@ -481,9 +540,9 @@ printf("%d ", idcs_next[i]);
 printf("\n");
 
       if (idcs_next.size() < 3) {
-        labeled_idcs[graph_idx].emplace_back(idcs_next);
-        labeled_tf[graph_idx].emplace_back(Eigen::Matrix4f());
-        labeled_states[graph_idx].emplace_back(0);
+        labeled_all_idcs[graph_idx].emplace_back(idcs_next);
+        labeled_all_tf[graph_idx].emplace_back(Eigen::Matrix4f());
+        labeled_all_states[graph_idx].emplace_back(0);
         break;
       }
 
@@ -493,15 +552,15 @@ printf("\n");
       ransac_tf(*pts_before, *pts_after, idcs_next, 0.1, 0.99, succeed, dinamic, mask, tf_next, T_C0BtoC0A, state);
 
       if (!succeed) {
-        labeled_idcs[graph_idx].emplace_back(idcs_next);
-        labeled_tf[graph_idx].emplace_back(Eigen::Matrix4f());
-        labeled_states[graph_idx].emplace_back(0);
+        labeled_all_idcs[graph_idx].emplace_back(idcs_next);
+        labeled_all_tf[graph_idx].emplace_back(Eigen::Matrix4f());
+        labeled_all_states[graph_idx].emplace_back(0);
       } 
     }
   }
 }
 
-void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1) {
+void track_moving_objects(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, const std::vector<size_t> &raw_idcs_raw) {
 cv::Mat test_l;
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
 std::vector<cv::Point2d> pts_now_viz;
@@ -523,18 +582,19 @@ cv::waitKey(1);
   // reject static pts, get only dynamic pts
   pcl::PointCloud<pcl::PointXYZ>::Ptr pts_after;
   pcl::PointCloud<pcl::PointXYZ>::Ptr pts_before;
-  reject_static_pts(calib, pts_before, pts_after, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred, raw_pts_C0, raw_pts_C1, test_l, pts_now_viz, pts_before_viz);
+  std::vector<size_t> raw_idcs;
+  reject_static_pts(calib, pts_before, pts_after, raw_idcs, raw_pts3d_before, raw_pts3d_after, raw_pts3d_pred, raw_pts_C0, raw_pts_C1, raw_idcs_raw, test_l, pts_now_viz, pts_before_viz);
   
   // Get k nearest points in the neighbourhood
   const size_t num_nearest = 3;
   size_t num_pts = pts_after->size();
   if (num_pts > num_nearest) {
-    std::vector<std::vector<size_t>> graph;
-    make_graph(pts_after, num_pts, num_nearest, graph, test_l, calib, pts_now_viz, pts_before_viz);
+    std::vector<std::vector<size_t>> graphs;
+    make_graphs(pts_after, num_pts, num_nearest, graphs, test_l, calib, pts_now_viz, pts_before_viz);
 
-    // DFS to bring all elements of a graph together and reject graphs with fewer nodes
+    // DFS to bring all elements of a graphs together and reject graphs with fewer nodes
     std::vector<std::vector<size_t>> graphed_idcs;
-    serialize_graph(graph, num_pts, graphed_idcs);
+    serialize_graphs(graphs, num_pts, graphed_idcs);
 
 for(int i = 0; i<graphed_idcs.size(); ++i) {
 for(int j = 0; j <graphed_idcs[i].size(); ++j) {
@@ -543,31 +603,144 @@ printf("%d ", graphed_idcs[i][j]);
 std::cout<<std::endl;
 }
 
-    std::vector<std::vector<std::vector<size_t>>> labeled_idcs;
-    std::vector<std::vector<char>> labeled_states;
-    std::vector<std::vector<Eigen::Matrix4f>> labeled_tf;
-    label_pts(labeled_idcs, labeled_states, labeled_tf, graphed_idcs, pts_before, pts_after, T_C0BtoC0A, state);
+    std::vector<std::vector<std::vector<size_t>>> labeled_all_idcs;
+    std::vector<std::vector<char>> labeled_all_states;
+    std::vector<std::vector<Eigen::Matrix4f>> labeled_all_tf;
+    label_pts(labeled_all_idcs, labeled_all_states, labeled_all_tf, graphed_idcs, pts_before, pts_after, T_C0BtoC0A, state);
+
+    std::vector<std::vector<size_t>> labeled_idcs;
+    std::vector<Eigen::Matrix4f> labeled_tf;
+    std::vector<std::vector<size_t>> labeled_raw_idcs;
+    for (size_t graph_idx = 0; graph_idx<labeled_all_idcs.size(); ++graph_idx) {
+      for (size_t label_idx = 0; label_idx<labeled_all_idcs[graph_idx].size(); ++label_idx) {
+        if(labeled_all_states[graph_idx][label_idx] != 1)
+          continue;
+
+        std::vector<size_t> partial_raw_idcs;
+        for (size_t pt_idx = 0; pt_idx<labeled_all_idcs[graph_idx][label_idx].size(); ++pt_idx) {
+          size_t idx = labeled_all_idcs[graph_idx][label_idx][pt_idx];
+          partial_raw_idcs.emplace_back(raw_idcs[idx]);
+        }
+        labeled_raw_idcs.emplace_back(partial_raw_idcs);
+        labeled_idcs.emplace_back(labeled_all_idcs[graph_idx][label_idx]);
+        labeled_tf.emplace_back(labeled_all_tf[graph_idx][label_idx]);
+      }
+    }
+
+    
+    size_t num_labels_now = labeled_raw_idcs.size();
+    std::unordered_map<size_t, size_t> raw_idcs_table_now;
+    for (size_t label_idx = 0; label_idx<num_labels_now; ++label_idx) {
+      for (size_t pt_idx = 0; pt_idx<labeled_raw_idcs[label_idx].size(); ++pt_idx) {
+        size_t raw_idx = labeled_raw_idcs[label_idx][pt_idx];
+        raw_idcs_table_now.emplace(raw_idx, label_idx);
+      }
+    } 
+    if (num_labels_now > 0 && state->_num_labels_before > 0)
+    {
+      size_t mat_size = std::max(state->_num_labels_before, num_labels_now);
+      std::vector<std::vector<int>> cost_matrix(mat_size, std::vector<int>(mat_size, 0));
+      int min_val = 0;
+      for (size_t label_idx_now = 0; label_idx_now<num_labels_now; ++label_idx_now) {
+printf("input : ");
+for (size_t pt_idx = 0; pt_idx<labeled_raw_idcs[label_idx_now].size(); ++pt_idx) {
+printf("%d(%d) ", labeled_idcs[label_idx_now][pt_idx], labeled_raw_idcs[label_idx_now][pt_idx]);
+}
+std::cout<<std::endl;
+
+        for (size_t pt_idx = 0; pt_idx < labeled_raw_idcs[label_idx_now].size(); ++pt_idx) {
+          size_t raw_idx_now = labeled_raw_idcs[label_idx_now][pt_idx];
+          auto it_before = state->_raw_idcs_table_before.find(raw_idx_now);
+          if(it_before == state->_raw_idcs_table_before.end())
+            continue;
+
+          size_t label_idx_before = it_before->second;
+          --cost_matrix[label_idx_now][label_idx_before];
+          min_val = std::min(min_val, cost_matrix[label_idx_now][label_idx_before]);
+        }
+      }
+
+printf("table\n");
+printf("     ");
+for(int i = 0; i<cost_matrix[0].size(); ++i)
+printf("%d ", i);
+std::cout<<std::endl;
+for(int i = 0; i<cost_matrix.size(); ++i)
+{
+  printf("%d : ", i);
+  for(int j = 0; j<cost_matrix[i].size(); ++j)
+  {
+    printf("%d ", cost_matrix[i][j]);
+  }
+  std::cout<<std::endl;
+}
+
+    for(size_t i = 0; i<cost_matrix.size(); ++i)
+    {
+      for(int j = 0; j<cost_matrix[i].size(); ++j)
+      {
+        cost_matrix[i][j] -= min_val;
+      }
+      std::cout<<std::endl;
+    }
+
+printf("cost\n");
+printf("     ");
+for(int i = 0; i<cost_matrix[0].size(); ++i)
+printf("%d ", i);
+std::cout<<std::endl;
+for(int i = 0; i<cost_matrix.size(); ++i)
+{
+printf("%d : ", i);
+for(int j = 0; j<cost_matrix[i].size(); ++j)
+{
+printf("%d ", cost_matrix[i][j]);
+}
+std::cout<<std::endl;
+}
+std::cout<<std::endl;
+
+    std::vector<std::pair<size_t, size_t>> correspondences;
+    get_hungarian_correspondences(cost_matrix, correspondences);
+
+printf("correspondences\n");
+for(int i = 0; i<correspondences.size(); ++i)
+{
+if(cost_matrix[correspondences[i].first][correspondences[i].second] >= -min_val)
+  continue;
+printf("%d %d\n", correspondences[i].first, correspondences[i].second);
+}
+    }
+    state->_raw_idcs_table_before = raw_idcs_table_now;
+    state->_num_labels_before = num_labels_now;
+    
+
+    
 
 printf("labels\n");
-for(int i = 0; i<labeled_idcs.size(); ++i)
+for(int i = 0; i<labeled_all_idcs.size(); ++i)
 {
-printf("graph %d :\n", i);
-for(int j = 0; j<labeled_idcs[i].size(); ++j)
+printf("graphs %d :\n", i);
+for(int j = 0; j<labeled_all_idcs[i].size(); ++j)
 {
 auto label_color = randomColor();
-if(labeled_states[i][j] != 1)
+if(labeled_all_states[i][j] != 1)
 label_color = cv::Scalar(255,255,255);
 printf("{");
-for(size_t k = 0; k<labeled_idcs[i][j].size(); ++k)
+for(size_t k = 0; k<labeled_all_idcs[i][j].size(); ++k)
 {
-printf("%d ", labeled_idcs[i][j][k]);
-int idx = labeled_idcs[i][j][k];
+printf("%d ", labeled_all_idcs[i][j][k]);
+int idx = labeled_all_idcs[i][j][k];
 auto q = cv::Point2d(calib->value()(0)*pts_now_viz[idx].x+calib->value()(2), calib->value()(1)*pts_now_viz[idx].y+calib->value()(3));
 cv::circle(test_l, q, 3, label_color, 3);
-if(labeled_states[i][j] == 1)
+if(labeled_all_states[i][j] == 1)
+{
 cv::circle(test_l, q, 13, cv::Scalar(0,255,0), 2);
+std::string s = std::to_string(raw_idcs[idx]);
+cv::putText(test_l, s, q, 1, 1, cv::Scalar(0, 255, 0));
 }
-printf("}(%d) ", labeled_states[i][j]);
+}
+printf("}(%d) ", labeled_all_states[i][j]);
 }
 printf("\n");
 }
@@ -804,21 +977,22 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   auto p_IBinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
   std::vector<std::vector<cv::Point2f>> tracked_raw_pts_C0(2);
   std::vector<std::vector<cv::Point2f>> tracked_raw_pts_C1(2);
+  std::vector<size_t> raw_idcs;
   // Perform our feature tracking!
   if (params.use_stereo) {
     auto R_C0toC1 = R_IBtoC1 * R_IBtoC0.transpose();
     auto p_C0inC1 = - R_C0toC1 * p_IBinC0 + p_IBinC1;
-    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, R_C0toC1, p_C0inC1);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, R_C0toC1, p_C0inC1);
   }
   else {
-    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
   }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1);
+    trackARUCO->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -836,7 +1010,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
 printf("mot from zupt\n");
 
-      track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1);
+      track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
       state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
       state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
       return;
@@ -859,7 +1033,7 @@ printf("mot from zupt\n");
 
   // select dynamic pts
 printf("mot from normal\n");
-  track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1);
+  track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
   state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
   state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
 }

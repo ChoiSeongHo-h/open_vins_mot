@@ -32,7 +32,7 @@
 
 using namespace ov_core;
 
-void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
+void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
   if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {
@@ -81,7 +81,7 @@ void TrackKLT::feed_new_camera(const CameraData &message, std::vector<std::vecto
   if (num_images == 1) {
     feed_monocular(message, 0);
   } else if (num_images == 2 && use_stereo) {
-    feed_stereo(message, 0, 1, klt_passed_pts_C0, klt_passed_pts_C1, R_C0toC1, p_C0inC1);
+    feed_stereo(message, 0, 1, klt_passed_pts_C0, klt_passed_pts_C1, raw_idcs, R_C0toC1, p_C0inC1);
   } else if (!use_stereo) {
     parallel_for_(cv::Range(0, (int)num_images), LambdaBody([&](const cv::Range &range) {
                     for (int i = range.start; i < range.end; i++) {
@@ -201,7 +201,7 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
-void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
+void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
 
   // Lock this data feed for this camera
   size_t cam_id_left = message.sensor_ids.at(msg_id_left);
@@ -333,7 +333,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
       // Ensure we do not have any bad KLT tracks (i.e., points are negative)
       if (pts_right_new.at(index_right).pt.x < 0 || pts_right_new.at(index_right).pt.y < 0 ||
           (int)pts_right_new.at(index_right).pt.x >= img_right.cols || (int)pts_right_new.at(index_right).pt.y >= img_right.rows ||
-          (mask_ll[i] == 0 && mask_rr[index_right] == 0))
+          (mask_ll_klt[i] == 0 && mask_rr_klt[index_right] == 0))
         continue;
 
       // normalized undistorted points
@@ -372,7 +372,8 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
           klt_passed_pts_C0[1].emplace_back(upt_left_new);
           klt_passed_pts_C1[0].emplace_back(upt_right_old);
           klt_passed_pts_C1[1].emplace_back(upt_right_new);
-        }
+          raw_idcs.emplace_back(ids_left_old.at(i));
+          }
       }
       // PRINT_DEBUG("adding to stereo - %u , %u\n", ids_left_old.at(i), ids_right_old.at(index_right));
     } else if (mask_ll[i]) {
