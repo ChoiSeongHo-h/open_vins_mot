@@ -79,6 +79,7 @@ list(APPEND LIBRARY_SOURCES
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
         src/core/VioManager.cpp
+        src/core/Tracker.cpp
         src/core/VioManagerHelper.cpp
         src/update/UpdaterHelper.cpp
         src/update/UpdaterMSCKF.cpp
