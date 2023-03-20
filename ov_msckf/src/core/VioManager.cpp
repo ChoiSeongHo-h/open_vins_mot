@@ -43,8 +43,6 @@
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
 
-#include "Tracker.h"
-
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
@@ -154,6 +152,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
 
   // Feature initializer for active tracks
   active_tracks_initializer = std::make_shared<FeatureInitializer>(params.featinit_options);
+
+  object_tracker = std::make_shared<ObjectTracker>();
 }
 
 void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
@@ -308,9 +308,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
 printf("mot from zupt\n");
 
-      track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
-      state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
-      state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
+      object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
       return;
     }
   }
@@ -331,9 +329,7 @@ printf("mot from zupt\n");
 
   // select dynamic pts
 printf("mot from normal\n");
-  track_moving_objects(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
-  state->_R_GtoIB = Eigen::Matrix3d(state->_imu->Rot());
-  state->_p_IBinG = Eigen::Vector3d(state->_imu->pos());
+  object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {

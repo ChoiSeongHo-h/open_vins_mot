@@ -32,6 +32,8 @@
 #include <string>
 
 #include "VioManagerOptions.h"
+#include "ObjectTracker.h"
+class ObjectTracker;
 
 namespace ov_core {
 struct ImuData;
@@ -244,6 +246,8 @@ protected:
   std::map<size_t, Eigen::Matrix3d> active_feat_linsys_A;
   std::map<size_t, Eigen::Vector3d> active_feat_linsys_b;
   std::map<size_t, int> active_feat_linsys_count;
+
+  std::shared_ptr<ObjectTracker> object_tracker;
 };
 
 } // namespace ov_msckf
