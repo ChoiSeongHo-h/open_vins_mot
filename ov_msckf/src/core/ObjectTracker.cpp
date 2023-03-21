@@ -1,6 +1,90 @@
 #include "ObjectTracker.h"
 
 
+class ObjectTracker::ReprojectionErrorCostFunction {
+ public:
+  ReprojectionErrorCostFunction(const Eigen::Vector2d &p2ds_C0_prev,
+                                const Eigen::Vector2d &p2ds_C1_prev,
+                                const Eigen::Vector2d &p2ds_C0_now,
+                                const Eigen::Vector2d &p2ds_C1_now,
+                                const Eigen::Quaterniond &q_C0toC1,
+                                const Eigen::Vector3d &p_C0inC1_now,
+                                const double &fx,
+                                const double &fy)
+      : p2ds_C0_prev_(p2ds_C0_prev),
+        p2ds_C1_prev_(p2ds_C1_prev),
+        p2ds_C0_now_(p2ds_C0_now),
+        p2ds_C1_now_(p2ds_C1_now),
+        q_C0toC1_(q_C0toC1),
+        p_C0inC1_now_(p_C0inC1_now),
+        fx_(fx),
+        fy_(fy) {}
+
+  template <typename T>
+  bool operator()(const T* const p3d_i, const T* const q_para_i, const T* const p_para_i, T* residuals) const {
+    Eigen::Matrix<T, 2, 1> p2ds_C0_prev = p2ds_C0_prev_.cast<T>();
+    Eigen::Matrix<T, 2, 1> p2ds_C1_prev = p2ds_C1_prev_.cast<T>();
+    Eigen::Matrix<T, 2, 1> p2ds_C0_now = p2ds_C0_now_.cast<T>();
+    Eigen::Matrix<T, 2, 1> p2ds_C1_now = p2ds_C1_now_.cast<T>();
+    Eigen::Quaternion<T> q_C0toC1 = q_C0toC1_.cast<T>();
+    Eigen::Matrix<T, 3, 1> p_C0inC1_now = p_C0inC1_now_.cast<T>();
+    T fx = T(fx_);
+    T fy = T(fy_);
+      
+    Eigen::Quaternion<T> q_para(q_para_i[0], q_para_i[1], q_para_i[2], q_para_i[3]);
+    Eigen::Matrix<T, 3, 1> p_para(p_para_i[0], p_para_i[1], p_para_i[2]);
+std::cout<< q_para.w() << ", " << q_para.x() << ", " << q_para.y() << ", " << q_para.z() << std::endl<< std::endl;
+std::cout<< p_para(0) << ", " << p_para(1) << ", " << p_para(2) << std::endl;
+
+    Eigen::Matrix<T, 3, 1> p3d(p3d_i[0], p3d_i[1], p3d_i[2]);
+std::cout<< T(p3d(0)) << ", " << T(p3d(1)) << ", " << T(p3d(2)) << std::endl;
+    T u_C0_prev = p3d(0)/p3d(2);
+    T v_C0_prev = p3d(1)/p3d(2);
+    residuals[0] = (u_C0_prev - T(p2ds_C0_prev(0))) / T(2.0/fx);
+    residuals[1] = (v_C0_prev - T(p2ds_C0_prev(1))) / T(2.0/fy);
+std::cout<< u_C0_prev << ", " << v_C0_prev << ", " << p2ds_C0_prev(0) << ", " << p2ds_C0_prev(1) << std::endl<< std::endl;
+
+    Eigen::Matrix<T, 3, 1> p3d_C1_prev;
+    p3d_C1_prev = q_C0toC1 * p3d + p_C0inC1_now;
+std::cout<< T(p3d_C1_prev(0)) << ", " << T(p3d_C1_prev(1)) << ", " << T(p3d_C1_prev(2)) << std::endl;
+    T u_C1_prev = p3d_C1_prev(0)/p3d_C1_prev(2);
+    T v_C1_prev = p3d_C1_prev(1)/p3d_C1_prev(2);
+    residuals[2] = (u_C1_prev - T(p2ds_C1_prev(0))) / T(4.0/fx);
+    residuals[3] = (v_C1_prev - T(p2ds_C1_prev(1))) / T(4.0/fy);
+std::cout<< u_C1_prev << ", " << v_C1_prev << ", " << p2ds_C1_prev(0) << ", " << p2ds_C1_prev(1) << std::endl<< std::endl;
+
+    Eigen::Matrix<T, 3, 1> p3d_C0_now;
+    p3d_C0_now = q_para * p3d + p_para;
+std::cout<< T(p3d_C0_now(0)) << ", " << T(p3d_C0_now(1)) << ", " << T(p3d_C0_now(2)) << std::endl;
+    T u_C0_now = p3d_C0_now(0)/p3d_C0_now(2);
+    T v_C0_now = p3d_C0_now(1)/p3d_C0_now(2);
+    residuals[4] = (u_C0_now - T(p2ds_C0_now(0))) / T(4.0/fx);
+    residuals[5] = (v_C0_now - T(p2ds_C0_now(1))) / T(4.0/fy);
+std::cout<< u_C0_now << ", " << v_C0_now << ", " << p2ds_C0_now(0) << ", " << p2ds_C0_now(1) << std::endl<< std::endl;
+
+    Eigen::Matrix<T, 3, 1> p3d_C1_now;
+    p3d_C1_now = q_C0toC1 * p3d_C0_now + p_C0inC1_now;
+std::cout<< T(p3d_C1_now(0)) << ", " << T(p3d_C1_now(1)) << ", " << T(p3d_C1_now(2)) << std::endl;
+    T u_C1_now = p3d_C1_now(0)/p3d_C1_now(2);
+    T v_C1_now = p3d_C1_now(1)/p3d_C1_now(2);
+    residuals[6] = (u_C1_now - T(p2ds_C1_now(0))) / T(6.0/fx);
+    residuals[7] = (v_C1_now - T(p2ds_C1_now(1))) / T(6.0/fy);
+std::cout<< u_C1_now << ", " << v_C1_now << ", " << p2ds_C1_now(0) << ", " << p2ds_C1_now(1) << std::endl<< std::endl;
+
+    return true;
+  }
+
+ private:
+  const Eigen::Vector2d &p2ds_C0_prev_;
+  const Eigen::Vector2d &p2ds_C1_prev_;
+  const Eigen::Vector2d &p2ds_C0_now_;
+  const Eigen::Vector2d &p2ds_C1_now_;
+  const Eigen::Quaterniond &q_C0toC1_;
+  const Eigen::Vector3d &p_C0inC1_now_;
+  const double &fx_;
+  const double &fy_;
+};
+
 void ObjectTracker::get_hungarian_pairs(const std::vector<std::vector<int>> &cost, std::vector<std::pair<size_t, size_t>> &pairs) {
   int n = cost.size();
   int m = cost[0].size();
@@ -185,9 +269,9 @@ void ObjectTracker::reject_static_p3ds(const cv::Mat &all_p3ds_prev, const cv::M
       Eigen::Vector2d p2d_C1_now;
       Eigen::Vector2d p2d_C1_prev;
       p2d_C0_now << (double)all_p2ds_C0_now[i].x, (double)all_p2ds_C0_now[i].y;
-      p2d_C0_prev << (double)all_p2ds_C0_now[i].x, (double)all_p2ds_C0_now[i].y;
+      p2d_C0_prev << (double)all_p2ds_C0_prev[i].x, (double)all_p2ds_C0_prev[i].y;
       p2d_C1_now << (double)all_p2ds_C1_now[i].x, (double)all_p2ds_C1_now[i].y;
-      p2d_C1_prev << (double)all_p2ds_C1_now[i].x, (double)all_p2ds_C1_now[i].y;
+      p2d_C1_prev << (double)all_p2ds_C1_prev[i].x, (double)all_p2ds_C1_prev[i].y;
       p2ds_C0_now.emplace_back(p2d_C0_now);
       p2ds_C0_prev.emplace_back(p2d_C0_prev);
       p2ds_C1_now.emplace_back(p2d_C1_now);
@@ -470,6 +554,113 @@ void ObjectTracker::test_dynamic(const std::vector<size_t> &idcs, bool &succeede
   if (!dynamic)
     return;
 
+
+  Eigen::Quaterniond q_inliers(inliers_tf.block<3,3>(0,0).cast<double>());
+
+  // Initialize problem
+  ceres::Problem problem;
+
+  // Add parameter block for quaternion rotation
+  double q_para[4];
+  q_para[0] = q_inliers.w();
+  q_para[1] = q_inliers.x();
+  q_para[2] = q_inliers.y();
+  q_para[3] = q_inliers.z();
+printf("input %f %f %f %f\n", q_para[0], q_para[1], q_para[2], q_para[3]);
+  problem.AddParameterBlock(q_para, 4, new ceres::EigenQuaternionManifold);
+  
+  // Add parameter block for translation
+  double p_para[3];
+  p_para[0] = inliers_tf(0,3);
+  p_para[1] = inliers_tf(1,3);
+  p_para[2] = inliers_tf(2,3);
+printf("input %f %f %f\n", p_para[0], p_para[1], p_para[2]);
+  problem.AddParameterBlock(p_para, 3);
+
+  std::vector<size_t> compact_idcs;
+  for (int i = 0; i<mask.size(); ++i) {
+    if (mask[i] == IS_OUTLIER) 
+      continue;
+
+    compact_idcs.emplace_back(idcs[i]);
+  }
+
+  std::vector<Eigen::Vector3d> p3ds_para;
+  for (int i = 0; i<compact_idcs.size(); ++i) {
+    size_t idx = compact_idcs[i];
+printf("%d ", idx);
+    Eigen::Vector3d p3d_para;
+    p3d_para << (double)p3ds_prev->at(idx).x, (double)p3ds_prev->at(idx).y, (double)p3ds_prev->at(idx).z;
+    p3ds_para.emplace_back(p3d_para);
+  }
+std::cout<<std::endl<<std::endl;
+  for (int i = 0; i<compact_idcs.size(); ++i) {
+printf("input %f %f %f\n", p3ds_para[i](0), p3ds_para[i](1), p3ds_para[i](2));
+    problem.AddParameterBlock(p3ds_para[i].data(), 3);
+  }
+double l2_prev = 0;
+for(int i = 0; i<p3ds_para.size(); ++i)
+{
+  Eigen::Vector3d temp0 = q_inliers * p3ds_para[i] + inliers_tf.cast<double>().block<3,1>(0,3);
+  Eigen::Vector3d temp1 = T_C0_prev_to_now.block<3,3>(0,0) * p3ds_para[i] + T_C0_prev_to_now.block<3,1>(0,3);
+  l2_prev += (temp0-temp1).norm();
+}
+printf("prev : %f\n", l2_prev/p3ds_para.size());
+printf("%f %f %f %f\n", q_inliers.w(), q_inliers.x(), q_inliers.y(), q_inliers.z());
+std::cout<<inliers_tf.cast<double>().block<3,1>(0,3)<<std::endl;
+printf("input\n");
+
+  // Add cost function for each observation
+  for (int i = 0; i<compact_idcs.size(); ++i) {
+    size_t idx = compact_idcs[i];
+    ceres::CostFunction* cost_function =
+        new ceres::AutoDiffCostFunction<ReprojectionErrorCostFunction, 8, 3, 4, 3>(
+            new ReprojectionErrorCostFunction(p2ds_C0_prev[idx], p2ds_C1_prev[idx],
+                                              p2ds_C0_now[idx], p2ds_C1_now[idx],
+                                              Eigen::Quaterniond(R_C0toC1_now), p_C0inC1_now,
+                                              fx0, fy0));
+std::cout<<p2ds_C0_prev[idx]<<std::endl;
+std::cout<<p2ds_C1_prev[idx]<<std::endl;
+std::cout<<p2ds_C0_now[idx]<<std::endl;
+std::cout<<p2ds_C1_now[idx]<<std::endl;
+printf("%f %f %f %f\n", Eigen::Quaterniond(R_C0toC1_now).w(), Eigen::Quaterniond(R_C0toC1_now).x(), Eigen::Quaterniond(R_C0toC1_now).y(), Eigen::Quaterniond(R_C0toC1_now).z());
+std::cout<<p_C0inC1_now<<std::endl;
+std::cout<<fx0<<std::endl;
+std::cout<<fy0<<std::endl;
+std::cout<<p3ds_para[i]<<std::endl;
+printf("%f %f %f %f\n", q_para[0], q_para[1], q_para[2], q_para[3]);
+printf("%f %f %f\n", p_para[0], p_para[1], p_para[2]);
+    problem.AddResidualBlock(cost_function, nullptr, p3ds_para[i].data(), q_para, p_para);
+  }
+printf("input\n");
+
+  // Set solver options
+  ceres::Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_SCHUR;
+  options.minimizer_progress_to_stdout = true;
+
+  // Solve the problem
+  ceres::Solver::Summary summary;
+  ceres::Solve(options, &problem, &summary);
+
+  std::cout << summary.FullReport() << std::endl;
+Eigen::Quaterniond q_refine(q_para[0], q_para[1], q_para[2], q_para[3]);
+Eigen::Vector3d p_refine;
+p_refine << p_para[0], p_para[1], p_para[2];
+double l2_now = 0;
+for(int i = 0; i<p3ds_para.size(); ++i)
+{
+  Eigen::Vector3d p3d_refine = q_refine * p3ds_para[i] + p_refine;
+  Eigen::Vector3d temp1 = T_C0_prev_to_now.block<3,3>(0,0) * p3ds_para[i] + T_C0_prev_to_now.block<3,1>(0,3);
+  l2_now += (p3d_refine-temp1).norm();
+  size_t idx = compact_idcs[i];
+printf("%f %f %f (%f %f)-> ", p3ds_now->at(idx).x, p3ds_now->at(idx).y, p3ds_now->at(idx).z, fx0*p3ds_now->at(idx).x/p3ds_now->at(idx).z+cx0, fy0*p3ds_now->at(idx).y/p3ds_now->at(idx).z+cy0);
+  p3ds_now->at(idx) = pcl::PointXYZ((float)p3d_refine.x(), (float)p3d_refine.y(), (float)p3d_refine.z());
+printf("%f %f %f (%f %f)\n", p3ds_now->at(idx).x, p3ds_now->at(idx).y, p3ds_now->at(idx).z, fx0*p3ds_now->at(idx).x/p3ds_now->at(idx).z+cx0, fy0*p3ds_now->at(idx).y/p3ds_now->at(idx).z+cy0);
+}
+printf("now : %f\n", l2_now/p3ds_para.size());
+printf("%f %f %f %f\n", q_refine.w(), q_refine.x(), q_refine.y(), q_refine.z());
+std::cout<<p_refine<<std::endl;
 
 }
 

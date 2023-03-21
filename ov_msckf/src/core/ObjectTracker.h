@@ -26,6 +26,7 @@ public:
   void track(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, const std::vector<size_t> &raw_idcs_raw);
 
 private:
+  class ReprojectionErrorCostFunction;
   const int NUM_NEAREST = 3;
   const int NUM_MAX_ITER = 10;
   const int MIN_NUM_TF = 3;
