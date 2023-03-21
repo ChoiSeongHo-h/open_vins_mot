@@ -143,3 +143,10 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 
 - Instead of analyzing individual points, I grouped them to analyze L2, which is less susceptible to errors.
 - Since I **assume a rigid transformation** and have **information at both time `t-1` and `t`**, the **accuracy is higher** compared to comparing the **observation at time `t`** to the prediction that applies the camera's transformation to the point at `t-1`.
+
+## Object refinement using on-manifold optimization
+![image](https://user-images.githubusercontent.com/72921481/226542049-9a5bf742-3b88-477b-9d34-cb8fe25bd12b.png)
+![image](https://user-images.githubusercontent.com/72921481/226542088-362671ba-6cea-4c74-8524-359a64f4a948.png)
+
+## Transformation association over time using the Hungarian algorithm
+![image](https://user-images.githubusercontent.com/72921481/226544979-ec2e09cb-7e57-438f-b41e-e24b249e0904.png)
