@@ -78,16 +78,16 @@ private:
 
   Eigen::Matrix4d T_C0_prev_to_now;
   
-  Eigen::Matrix3d _R_GtoI_prev;
+  Eigen::Matrix3d R_GtoI_prev;
   
-  Eigen::Vector3d _p_IinG_prev;
+  Eigen::Vector3d p_IinG_prev;
 
   // global  
   std::unordered_map<int, int> iter_table;
   
-  std::unordered_map<size_t, size_t> _raw_idcs_table_prev;
+  std::unordered_map<size_t, size_t> raw_idcs_table_prev;
   
-  size_t _num_labels_prev;
+  size_t num_labels_prev;
 
   void init(const std::shared_ptr<ov_msckf::State> &state);
 
@@ -105,7 +105,7 @@ private:
 
   void serialize_graphs(std::vector<std::vector<size_t>> &graphs, std::vector<std::vector<size_t>> &graphed_idcs);
 
-  void divide_graphs(std::vector<std::vector<size_t>> &graphed_idcs, std::vector<std::vector<size_t>> &labeled_idcs, std::vector<Eigen::Matrix4f> &labeled_tf, std::vector<std::vector<size_t>> &labeled_raw_idcs);
+  void divide_graphs(std::vector<std::vector<size_t>> &graphed_idcs, std::vector<std::vector<size_t>> &labeled_idcs, std::vector<std::vector<size_t>> &labeled_raw_idcs);
 
   void make_graphs(std::vector<std::vector<size_t>> &graphs);
 
@@ -119,7 +119,11 @@ private:
 
   bool pass_svd(std::vector<uchar> &mask_out, const std::vector<size_t> &idcs, const std::vector<float> &full_size_L2_3d_vec, const int best_num_inliers, Eigen::Matrix4f &inliers_tf);
 
-  void test_dynamic(const std::vector<size_t> &idcs, bool &succeed, bool &dynamic, std::vector<uchar> &mask_out, Eigen::Matrix4f &inliers_tf);
+  void refine_dynamic(const std::vector<size_t> &idcs, bool &succeed, bool &dynamic, std::vector<uchar> &mask_out, Eigen::Matrix4f &inliers_tf);
 
-  void label_p3ds(std::vector<std::vector<std::vector<size_t>>> &labeled_all_idcs, std::vector<std::vector<uchar>> &labeled_all_states, std::vector<std::vector<Eigen::Matrix4f>> &labeled_all_tf, const std::vector<std::vector<size_t>> &graphed_idcs);
+  void label_p3ds(std::vector<std::vector<std::vector<size_t>>> &labeled_all_idcs, std::vector<std::vector<uchar>> &labeled_all_states, const std::vector<std::vector<size_t>> &graphed_idcs);
+
+  void optimize(const Eigen::Matrix4f &inliers_tf, const std::vector<uchar> &mask, const std::vector<size_t> &idcs);
+
+  void get_pair(const size_t num_labels_now, const std::vector<std::vector<size_t>> &labeled_raw_idcs, std::vector<std::pair<size_t, size_t>> &pairs);
 };

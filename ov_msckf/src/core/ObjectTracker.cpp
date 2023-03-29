@@ -33,43 +33,33 @@ class ObjectTracker::ReprojectionErrorCostFunction {
       
     Eigen::Quaternion<T> q_para(q_para_i[0], q_para_i[1], q_para_i[2], q_para_i[3]);
     Eigen::Matrix<T, 3, 1> p_para(p_para_i[0], p_para_i[1], p_para_i[2]);
-std::cout<< q_para.w() << ", " << q_para.x() << ", " << q_para.y() << ", " << q_para.z() << std::endl<< std::endl;
-std::cout<< p_para(0) << ", " << p_para(1) << ", " << p_para(2) << std::endl;
 
     Eigen::Matrix<T, 3, 1> p3d(p3d_i[0], p3d_i[1], p3d_i[2]);
-std::cout<< T(p3d(0)) << ", " << T(p3d(1)) << ", " << T(p3d(2)) << std::endl;
     T u_C0_prev = p3d(0)/p3d(2);
     T v_C0_prev = p3d(1)/p3d(2);
     residuals[0] = (u_C0_prev - T(p2ds_C0_prev(0))) / T(2.0/fx);
     residuals[1] = (v_C0_prev - T(p2ds_C0_prev(1))) / T(2.0/fy);
-std::cout<< u_C0_prev << ", " << v_C0_prev << ", " << p2ds_C0_prev(0) << ", " << p2ds_C0_prev(1) << std::endl<< std::endl;
 
     Eigen::Matrix<T, 3, 1> p3d_C1_prev;
     p3d_C1_prev = q_C0toC1 * p3d + p_C0inC1_now;
-std::cout<< T(p3d_C1_prev(0)) << ", " << T(p3d_C1_prev(1)) << ", " << T(p3d_C1_prev(2)) << std::endl;
     T u_C1_prev = p3d_C1_prev(0)/p3d_C1_prev(2);
     T v_C1_prev = p3d_C1_prev(1)/p3d_C1_prev(2);
     residuals[2] = (u_C1_prev - T(p2ds_C1_prev(0))) / T(4.0/fx);
     residuals[3] = (v_C1_prev - T(p2ds_C1_prev(1))) / T(4.0/fy);
-std::cout<< u_C1_prev << ", " << v_C1_prev << ", " << p2ds_C1_prev(0) << ", " << p2ds_C1_prev(1) << std::endl<< std::endl;
 
     Eigen::Matrix<T, 3, 1> p3d_C0_now;
     p3d_C0_now = q_para * p3d + p_para;
-std::cout<< T(p3d_C0_now(0)) << ", " << T(p3d_C0_now(1)) << ", " << T(p3d_C0_now(2)) << std::endl;
     T u_C0_now = p3d_C0_now(0)/p3d_C0_now(2);
     T v_C0_now = p3d_C0_now(1)/p3d_C0_now(2);
     residuals[4] = (u_C0_now - T(p2ds_C0_now(0))) / T(4.0/fx);
     residuals[5] = (v_C0_now - T(p2ds_C0_now(1))) / T(4.0/fy);
-std::cout<< u_C0_now << ", " << v_C0_now << ", " << p2ds_C0_now(0) << ", " << p2ds_C0_now(1) << std::endl<< std::endl;
 
     Eigen::Matrix<T, 3, 1> p3d_C1_now;
     p3d_C1_now = q_C0toC1 * p3d_C0_now + p_C0inC1_now;
-std::cout<< T(p3d_C1_now(0)) << ", " << T(p3d_C1_now(1)) << ", " << T(p3d_C1_now(2)) << std::endl;
     T u_C1_now = p3d_C1_now(0)/p3d_C1_now(2);
     T v_C1_now = p3d_C1_now(1)/p3d_C1_now(2);
     residuals[6] = (u_C1_now - T(p2ds_C1_now(0))) / T(6.0/fx);
     residuals[7] = (v_C1_now - T(p2ds_C1_now(1))) / T(6.0/fy);
-std::cout<< u_C1_now << ", " << v_C1_now << ", " << p2ds_C1_now(0) << ", " << p2ds_C1_now(1) << std::endl<< std::endl;
 
     return true;
   }
@@ -103,7 +93,7 @@ void ObjectTracker::get_hungarian_pairs(const std::vector<std::vector<int>> &cos
         used[j0] = true;
         int i0 = p[j0];
         int delta = INF;
-        int j1;
+        int j1 = 0;
         for (int j = 1; j <= m; ++j) {
           if (used[j])
             continue;
@@ -287,8 +277,6 @@ void ObjectTracker::get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &st
   auto R_ItoC1 = Eigen::Matrix3d(state->_calib_IMUtoCAM[1]->Rot());
   auto p_IinC0 = Eigen::Vector3d(state->_calib_IMUtoCAM[0]->pos());
   auto p_IinC1 = Eigen::Vector3d(state->_calib_IMUtoCAM[1]->pos());
-  auto R_GtoI_prev = _R_GtoI_prev;
-  auto p_IinG_prev = _p_IinG_prev;
 
   // criteria point : {global}
   Eigen::Matrix3d R_GtoC0_prev = R_ItoC0 * R_GtoI_prev;
@@ -542,19 +530,7 @@ std::cout<<std::endl;
   return false;
 }
 
-void ObjectTracker::test_dynamic(const std::vector<size_t> &idcs, bool &succeeded, bool &dynamic, std::vector<uchar> &mask, Eigen::Matrix4f &inliers_tf) {
-  std::vector<float> L2_3d_vec;
-  int best_num_consensus;
-  succeeded = pass_ransac(idcs, TH_L2_3D_RANSAC, PROB_RANSAC, mask, L2_3d_vec, best_num_consensus);
-  if (!succeeded)
-    return;
-
-  dynamic = false;
-  dynamic = pass_svd(mask, idcs, L2_3d_vec, best_num_consensus, inliers_tf);
-  if (!dynamic)
-    return;
-
-
+void ObjectTracker::optimize(const Eigen::Matrix4f &inliers_tf, const std::vector<uchar> &mask, const std::vector<size_t> &idcs) {
   Eigen::Quaterniond q_inliers(inliers_tf.block<3,3>(0,0).cast<double>());
 
   // Initialize problem
@@ -566,7 +542,6 @@ void ObjectTracker::test_dynamic(const std::vector<size_t> &idcs, bool &succeede
   q_para[1] = q_inliers.x();
   q_para[2] = q_inliers.y();
   q_para[3] = q_inliers.z();
-printf("input %f %f %f %f\n", q_para[0], q_para[1], q_para[2], q_para[3]);
   problem.AddParameterBlock(q_para, 4, new ceres::EigenQuaternionManifold);
   
   // Add parameter block for translation
@@ -574,11 +549,10 @@ printf("input %f %f %f %f\n", q_para[0], q_para[1], q_para[2], q_para[3]);
   p_para[0] = inliers_tf(0,3);
   p_para[1] = inliers_tf(1,3);
   p_para[2] = inliers_tf(2,3);
-printf("input %f %f %f\n", p_para[0], p_para[1], p_para[2]);
   problem.AddParameterBlock(p_para, 3);
 
   std::vector<size_t> compact_idcs;
-  for (int i = 0; i<mask.size(); ++i) {
+  for (size_t i = 0; i<mask.size(); ++i) {
     if (mask[i] == IS_OUTLIER) 
       continue;
 
@@ -586,32 +560,18 @@ printf("input %f %f %f\n", p_para[0], p_para[1], p_para[2]);
   }
 
   std::vector<Eigen::Vector3d> p3ds_para;
-  for (int i = 0; i<compact_idcs.size(); ++i) {
+  for (size_t i = 0; i<compact_idcs.size(); ++i) {
     size_t idx = compact_idcs[i];
-printf("%d ", idx);
     Eigen::Vector3d p3d_para;
     p3d_para << (double)p3ds_prev->at(idx).x, (double)p3ds_prev->at(idx).y, (double)p3ds_prev->at(idx).z;
     p3ds_para.emplace_back(p3d_para);
   }
-std::cout<<std::endl<<std::endl;
-  for (int i = 0; i<compact_idcs.size(); ++i) {
-printf("input %f %f %f\n", p3ds_para[i](0), p3ds_para[i](1), p3ds_para[i](2));
+  for (size_t i = 0; i<compact_idcs.size(); ++i) {
     problem.AddParameterBlock(p3ds_para[i].data(), 3);
   }
-double l2_prev = 0;
-for(int i = 0; i<p3ds_para.size(); ++i)
-{
-  Eigen::Vector3d temp0 = q_inliers * p3ds_para[i] + inliers_tf.cast<double>().block<3,1>(0,3);
-  Eigen::Vector3d temp1 = T_C0_prev_to_now.block<3,3>(0,0) * p3ds_para[i] + T_C0_prev_to_now.block<3,1>(0,3);
-  l2_prev += (temp0-temp1).norm();
-}
-printf("prev : %f\n", l2_prev/p3ds_para.size());
-printf("%f %f %f %f\n", q_inliers.w(), q_inliers.x(), q_inliers.y(), q_inliers.z());
-std::cout<<inliers_tf.cast<double>().block<3,1>(0,3)<<std::endl;
-printf("input\n");
 
   // Add cost function for each observation
-  for (int i = 0; i<compact_idcs.size(); ++i) {
+  for (size_t i = 0; i<compact_idcs.size(); ++i) {
     size_t idx = compact_idcs[i];
     ceres::CostFunction* cost_function =
         new ceres::AutoDiffCostFunction<ReprojectionErrorCostFunction, 8, 3, 4, 3>(
@@ -619,55 +579,46 @@ printf("input\n");
                                               p2ds_C0_now[idx], p2ds_C1_now[idx],
                                               Eigen::Quaterniond(R_C0toC1_now), p_C0inC1_now,
                                               fx0, fy0));
-std::cout<<p2ds_C0_prev[idx]<<std::endl;
-std::cout<<p2ds_C1_prev[idx]<<std::endl;
-std::cout<<p2ds_C0_now[idx]<<std::endl;
-std::cout<<p2ds_C1_now[idx]<<std::endl;
-printf("%f %f %f %f\n", Eigen::Quaterniond(R_C0toC1_now).w(), Eigen::Quaterniond(R_C0toC1_now).x(), Eigen::Quaterniond(R_C0toC1_now).y(), Eigen::Quaterniond(R_C0toC1_now).z());
-std::cout<<p_C0inC1_now<<std::endl;
-std::cout<<fx0<<std::endl;
-std::cout<<fy0<<std::endl;
-std::cout<<p3ds_para[i]<<std::endl;
-printf("%f %f %f %f\n", q_para[0], q_para[1], q_para[2], q_para[3]);
-printf("%f %f %f\n", p_para[0], p_para[1], p_para[2]);
     problem.AddResidualBlock(cost_function, nullptr, p3ds_para[i].data(), q_para, p_para);
   }
-printf("input\n");
 
   // Set solver options
   ceres::Solver::Options options;
   options.linear_solver_type = ceres::DENSE_SCHUR;
-  options.minimizer_progress_to_stdout = true;
+  options.minimizer_progress_to_stdout = false;
 
   // Solve the problem
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << summary.FullReport() << std::endl;
-Eigen::Quaterniond q_refine(q_para[0], q_para[1], q_para[2], q_para[3]);
-Eigen::Vector3d p_refine;
-p_refine << p_para[0], p_para[1], p_para[2];
-double l2_now = 0;
-for(int i = 0; i<p3ds_para.size(); ++i)
-{
-  Eigen::Vector3d p3d_refine = q_refine * p3ds_para[i] + p_refine;
-  Eigen::Vector3d temp1 = T_C0_prev_to_now.block<3,3>(0,0) * p3ds_para[i] + T_C0_prev_to_now.block<3,1>(0,3);
-  l2_now += (p3d_refine-temp1).norm();
-  size_t idx = compact_idcs[i];
-printf("%f %f %f (%f %f)-> ", p3ds_now->at(idx).x, p3ds_now->at(idx).y, p3ds_now->at(idx).z, fx0*p3ds_now->at(idx).x/p3ds_now->at(idx).z+cx0, fy0*p3ds_now->at(idx).y/p3ds_now->at(idx).z+cy0);
-  p3ds_now->at(idx) = pcl::PointXYZ((float)p3d_refine.x(), (float)p3d_refine.y(), (float)p3d_refine.z());
-printf("%f %f %f (%f %f)\n", p3ds_now->at(idx).x, p3ds_now->at(idx).y, p3ds_now->at(idx).z, fx0*p3ds_now->at(idx).x/p3ds_now->at(idx).z+cx0, fy0*p3ds_now->at(idx).y/p3ds_now->at(idx).z+cy0);
-}
-printf("now : %f\n", l2_now/p3ds_para.size());
-printf("%f %f %f %f\n", q_refine.w(), q_refine.x(), q_refine.y(), q_refine.z());
-std::cout<<p_refine<<std::endl;
-
+  Eigen::Quaterniond q_refine(q_para[0], q_para[1], q_para[2], q_para[3]);
+  Eigen::Vector3d p_refine(p_para[0], p_para[1], p_para[2]);
+  for(size_t i = 0; i<p3ds_para.size(); ++i)
+  {
+    Eigen::Vector3d p3d_refine = q_refine * p3ds_para[i] + p_refine;
+    size_t idx = compact_idcs[i];
+    p3ds_now->at(idx) = pcl::PointXYZ((float)p3d_refine.x(), (float)p3d_refine.y(), (float)p3d_refine.z());
+  }
 }
 
-void ObjectTracker::label_p3ds(std::vector<std::vector<std::vector<size_t>>> &labeled_idcs_2d, std::vector<std::vector<uchar>> &labeled_states_2d, std::vector<std::vector<Eigen::Matrix4f>> &labeled_tf_2d, const std::vector<std::vector<size_t>> &graphed_idcs) {
+void ObjectTracker::refine_dynamic(const std::vector<size_t> &idcs, bool &succeeded, bool &dynamic, std::vector<uchar> &mask, Eigen::Matrix4f &inliers_tf) {
+  std::vector<float> L2_3d_vec;
+  int best_num_consensus;
+  succeeded = pass_ransac(idcs, TH_L2_3D_RANSAC, PROB_RANSAC, mask, L2_3d_vec, best_num_consensus);
+  if (!succeeded)
+    return;
+
+  dynamic = false;
+  dynamic = pass_svd(mask, idcs, L2_3d_vec, best_num_consensus, inliers_tf);
+  if (!dynamic)
+    return;
+
+  optimize(inliers_tf, mask, idcs);
+}
+
+void ObjectTracker::label_p3ds(std::vector<std::vector<std::vector<size_t>>> &labeled_idcs_2d, std::vector<std::vector<uchar>> &labeled_states_2d, const std::vector<std::vector<size_t>> &graphed_idcs) {
   labeled_idcs_2d = std::vector<std::vector<std::vector<size_t>>>(graphed_idcs.size());
   labeled_states_2d = std::vector<std::vector<uchar>>(graphed_idcs.size());
-  labeled_tf_2d = std::vector<std::vector<Eigen::Matrix4f>>(graphed_idcs.size());
   size_t num_graph = graphed_idcs.size();
   for (size_t graph_idx = 0; graph_idx<num_graph; ++graph_idx) {
     bool succeeded = true;
@@ -675,7 +626,7 @@ void ObjectTracker::label_p3ds(std::vector<std::vector<std::vector<size_t>>> &la
     std::vector<size_t> idcs_now = graphed_idcs[graph_idx];
     std::vector<uchar> mask(idcs_now.size(), IS_OUTLIER);
     Eigen::Matrix4f tf_now;
-    test_dynamic(idcs_now, succeeded, dinamic, mask, tf_now);
+    refine_dynamic(idcs_now, succeeded, dinamic, mask, tf_now);
     while (succeeded) {
       std::vector<size_t> idcs_next;
       std::vector<size_t> inlier_idcs;
@@ -689,7 +640,6 @@ void ObjectTracker::label_p3ds(std::vector<std::vector<std::vector<size_t>>> &la
       }
 
       labeled_idcs_2d[graph_idx].emplace_back(inlier_idcs);
-      labeled_tf_2d[graph_idx].emplace_back(tf_now);
       if (dinamic) {
         labeled_states_2d[graph_idx].emplace_back(DYNAMIC);
       }
@@ -704,7 +654,6 @@ printf("\n");
 
       if (idcs_next.size() < MIN_NUM_TF) {
         labeled_idcs_2d[graph_idx].emplace_back(idcs_next);
-        labeled_tf_2d[graph_idx].emplace_back(Eigen::Matrix4f());
         labeled_states_2d[graph_idx].emplace_back(IS_OUTLIER);
         break;
       }
@@ -712,11 +661,10 @@ printf("\n");
       idcs_now = idcs_next;
       mask = std::vector<uchar>(idcs_next.size(), IS_OUTLIER);
       Eigen::Matrix4f tf_next;
-      test_dynamic(idcs_next, succeeded, dinamic, mask, tf_next);
+      refine_dynamic(idcs_next, succeeded, dinamic, mask, tf_next);
 
       if (!succeeded) {
         labeled_idcs_2d[graph_idx].emplace_back(idcs_next);
-        labeled_tf_2d[graph_idx].emplace_back(Eigen::Matrix4f());
         labeled_states_2d[graph_idx].emplace_back(IS_OUTLIER);
       } 
     }
@@ -754,11 +702,10 @@ void ObjectTracker::rm_outliers(const std::shared_ptr<ov_msckf::State> &state, c
   reject_static_p3ds(all_p3ds_prev, all_p3ds_now, all_p3ds_pred, all_p2ds_set_C0, all_p2ds_set_C1, all_raw_idcs);
 }
 
-void ObjectTracker::divide_graphs(std::vector<std::vector<size_t>> &graphed_idcs, std::vector<std::vector<size_t>> &labeled_idcs, std::vector<Eigen::Matrix4f> &labeled_tf, std::vector<std::vector<size_t>> &labeled_raw_idcs) {
+void ObjectTracker::divide_graphs(std::vector<std::vector<size_t>> &graphed_idcs, std::vector<std::vector<size_t>> &labeled_idcs, std::vector<std::vector<size_t>> &labeled_raw_idcs) {
   std::vector<std::vector<std::vector<size_t>>> labeled_idcs_2d;
   std::vector<std::vector<uchar>> labeled_states_2d;
-  std::vector<std::vector<Eigen::Matrix4f>> labeled_tf_2d;
-  label_p3ds(labeled_idcs_2d, labeled_states_2d, labeled_tf_2d, graphed_idcs);
+  label_p3ds(labeled_idcs_2d, labeled_states_2d, graphed_idcs);
 
   for (size_t graph_idx = 0; graph_idx<labeled_idcs_2d.size(); ++graph_idx) {
     for (size_t label_idx = 0; label_idx<labeled_idcs_2d[graph_idx].size(); ++label_idx) {
@@ -772,7 +719,6 @@ void ObjectTracker::divide_graphs(std::vector<std::vector<size_t>> &graphed_idcs
       }
       labeled_raw_idcs.emplace_back(partial_raw_idcs);
       labeled_idcs.emplace_back(labeled_idcs_2d[graph_idx][label_idx]);
-      labeled_tf.emplace_back(labeled_tf_2d[graph_idx][label_idx]);
     }
   }
 
@@ -804,70 +750,57 @@ printf("}(%d) ", labeled_states_2d[i][j]);
 printf("\n");
 }
 
-// if(!labeled_raw_idcs.empty())
-// {
-// // Get current time in milliseconds
-// auto now = std::chrono::system_clock::now();
-// auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+}
 
-// // Convert milliseconds to time_t (seconds since epoch)
-// std::time_t time = static_cast<std::time_t>(millis / 1000);
-// std::string file_name0 = "/home/csh/test/imgs/" + std::to_string(time) + "_now0.png";
-// std::string file_name1 = "/home/csh/test/imgs/" + std::to_string(time) + "_now1.png";
+void ObjectTracker::get_pair(const size_t num_labels_now, const std::vector<std::vector<size_t>> &labeled_raw_idcs, std::vector<std::pair<size_t, size_t>> &pairs) {
+  size_t mat_size = std::max(num_labels_prev, num_labels_now);
+  std::vector<std::vector<int>> cost_matrix(mat_size, std::vector<int>(mat_size, 0));
+  int min_val = 0;
+  for (size_t label_idx_now = 0; label_idx_now<num_labels_now; ++label_idx_now) {
+    for (size_t pt_idx = 0; pt_idx < labeled_raw_idcs[label_idx_now].size(); ++pt_idx) {
+      size_t raw_idx_now = labeled_raw_idcs[label_idx_now][pt_idx];
+      auto it_prev = raw_idcs_table_prev.find(raw_idx_now);
+      if(it_prev == raw_idcs_table_prev.end())
+        continue;
 
-// cv::Mat test_l0;
-// cv::cvtColor(message.images.at(0), test_l0, cv::COLOR_GRAY2RGB);
-// cv::Mat test_r0;
-// cv::cvtColor(message.images.at(1), test_r0, cv::COLOR_GRAY2RGB);
-// // cv::imwrite(file_name0, test_l0);
-// // cv::imwrite(file_name1, test_r0);
+      size_t label_idx_prev = it_prev->second;
+      --cost_matrix[label_idx_now][label_idx_prev];
+      min_val = std::min(min_val, cost_matrix[label_idx_now][label_idx_prev]);
+    }
+  }
 
-// printf("cam mat\n %f %f %f %f\n", fx0, fy0, cx0, cy0);
+  for(size_t i = 0; i<cost_matrix.size(); ++i) {
+    for(int j = 0; j<cost_matrix[i].size(); ++j) {
+      cost_matrix[i][j] -= min_val;
+    }
+  }
 
-// for(int i = 0; i<labeled_idcs.size(); ++i)
-// {
-// printf("tf------------\n");
-// std::cout<<labeled_tf[i]<<std::endl;
-//   auto &idcs = labeled_idcs[i];
-// printf("2d now 0 ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f\n", p2ds_C0_now[idx].x, p2ds_C0_now[idx].y);
-//   }
-// printf("2d now 1 ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f\n", p2ds_C1_now[idx].x, p2ds_C1_now[idx].y);
-//   }
-// printf("2d before 0 ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f\n", p2ds_C0_prev[idx].x, p2ds_C0_prev[idx].y);
-//   }
-// printf("2d before 1 ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f\n", p2ds_C1_prev[idx].x, p2ds_C1_prev[idx].y);
-//   }
-// printf("3d now ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f %f\n", p3ds_now->at(idx).x, p3ds_now->at(idx).y, p3ds_now->at(idx).z);
-//   }
-// printf("3d before ------------------\n");
-//   for(int j = 0; j < idcs.size(); ++j)
-//   {
-//     int idx = idcs[j];
-//     printf("%f %f %f\n", p3ds_prev->at(idx).x, p3ds_prev->at(idx).y, p3ds_prev->at(idx).z);
-//   }
-// }
-// 
-// }
+printf("cost\n");
+printf("     ");
+for(int i = 0; i<cost_matrix[0].size(); ++i)
+printf("%d ", i);
+std::cout<<std::endl;
+for(int i = 0; i<cost_matrix.size(); ++i)
+{
+printf("%d : ", i);
+for(int j = 0; j<cost_matrix[i].size(); ++j)
+{
+printf("%d ", cost_matrix[i][j]);
+}
+std::cout<<std::endl;
+}
+std::cout<<std::endl;
+
+  
+  get_hungarian_pairs(cost_matrix, pairs);
+
+printf("pairs\n");
+for(int i = 0; i<pairs.size(); ++i)
+{
+if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val)
+continue;
+printf("%d -> %d\n", pairs[i].first, pairs[i].second);
+}
 
 }
 
@@ -878,8 +811,8 @@ cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
   if (all_p2ds_set_C0[0].empty()) {
 cv::waitKey(1);
 
-    _R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
-    _p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
+    R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
+    p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
     return;
   }
 
@@ -903,10 +836,8 @@ std::cout<<std::endl;
 }
 
     std::vector<std::vector<size_t>> labeled_idcs;
-    std::vector<Eigen::Matrix4f> labeled_tf;
     std::vector<std::vector<size_t>> labeled_raw_idcs;
-    divide_graphs(graphed_idcs, labeled_idcs, labeled_tf, labeled_raw_idcs);
-
+    divide_graphs(graphed_idcs, labeled_idcs, labeled_raw_idcs);
     
     size_t num_labels_now = labeled_raw_idcs.size();
     std::unordered_map<size_t, size_t> raw_idcs_table_now;
@@ -916,93 +847,20 @@ std::cout<<std::endl;
         raw_idcs_table_now.emplace(raw_idx, label_idx);
       }
     } 
-    if (num_labels_now > 0 && _num_labels_prev > 0)
-    {
-      size_t mat_size = std::max(_num_labels_prev, num_labels_now);
-      std::vector<std::vector<int>> cost_matrix(mat_size, std::vector<int>(mat_size, 0));
-      int min_val = 0;
-      for (size_t label_idx_now = 0; label_idx_now<num_labels_now; ++label_idx_now) {
-printf("input : ");
-for (size_t pt_idx = 0; pt_idx<labeled_raw_idcs[label_idx_now].size(); ++pt_idx) {
-printf("%d(%d) ", labeled_idcs[label_idx_now][pt_idx], labeled_raw_idcs[label_idx_now][pt_idx]);
-}
-std::cout<<std::endl;
-
-        for (size_t pt_idx = 0; pt_idx < labeled_raw_idcs[label_idx_now].size(); ++pt_idx) {
-          size_t raw_idx_now = labeled_raw_idcs[label_idx_now][pt_idx];
-          auto it_prev = _raw_idcs_table_prev.find(raw_idx_now);
-          if(it_prev == _raw_idcs_table_prev.end())
-            continue;
-
-          size_t label_idx_prev = it_prev->second;
-          --cost_matrix[label_idx_now][label_idx_prev];
-          min_val = std::min(min_val, cost_matrix[label_idx_now][label_idx_prev]);
-        }
-      }
-
-printf("table\n");
-printf("     ");
-for(int i = 0; i<cost_matrix[0].size(); ++i)
-printf("%d ", i);
-std::cout<<std::endl;
-for(int i = 0; i<cost_matrix.size(); ++i)
-{
-  printf("%d : ", i);
-  for(int j = 0; j<cost_matrix[i].size(); ++j)
-  {
-    printf("%d ", cost_matrix[i][j]);
-  }
-  std::cout<<std::endl;
-}
-
-    for(size_t i = 0; i<cost_matrix.size(); ++i)
-    {
-      for(int j = 0; j<cost_matrix[i].size(); ++j)
-      {
-        cost_matrix[i][j] -= min_val;
-      }
-      std::cout<<std::endl;
-    }
-
-printf("cost\n");
-printf("     ");
-for(int i = 0; i<cost_matrix[0].size(); ++i)
-printf("%d ", i);
-std::cout<<std::endl;
-for(int i = 0; i<cost_matrix.size(); ++i)
-{
-printf("%d : ", i);
-for(int j = 0; j<cost_matrix[i].size(); ++j)
-{
-printf("%d ", cost_matrix[i][j]);
-}
-std::cout<<std::endl;
-}
-std::cout<<std::endl;
 
     std::vector<std::pair<size_t, size_t>> pairs;
-    get_hungarian_pairs(cost_matrix, pairs);
-
-printf("pairs\n");
-for(int i = 0; i<pairs.size(); ++i)
-{
-if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val)
-  continue;
-printf("%d -> %d\n", pairs[i].first, pairs[i].second);
-}
+    if (num_labels_now > 0 && num_labels_prev > 0) {
+      get_pair(num_labels_now, labeled_raw_idcs, pairs);
     }
-    _raw_idcs_table_prev = raw_idcs_table_now;
-    _num_labels_prev = num_labels_now;
-    
 
-    
-
+    raw_idcs_table_prev = raw_idcs_table_now;
+    num_labels_prev = num_labels_now;
 
   }
 
 cv::imshow("test", test_l);
 cv::waitKey(1);
 
-  _R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
-  _p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
+  R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
+  p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
 }
