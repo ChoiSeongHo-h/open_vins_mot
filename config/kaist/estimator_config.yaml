@@ -77,10 +77,10 @@ filepath_gt: "/tmp/ov_groundtruth.txt"
 # our front-end feature tracking parameters
 # we have a KLT and descriptor based (KLT is better implemented...)
 use_klt: true
-num_pts: 200
+num_pts: 400
 fast_threshold: 30
-grid_x: 5
-grid_y: 5
+grid_x: 12
+grid_y: 4
 min_px_dist: 20
 knn_ratio: 0.65
 track_frequency: 31.0

@@ -61,7 +61,7 @@ public:
    * @brief Process a new image
    * @param message Contains our timestamp, images, and camera ids
    */
-  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
+  void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, std::unordered_set<size_t> &tracked_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) override;
 
 protected:
   /**
@@ -77,7 +77,7 @@ protected:
    * @param msg_id_left first image index in message data vector
    * @param msg_id_right second image index in message data vector
    */
-  void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
+  void feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, std::unordered_set<size_t> &tracked_idcs, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
 
   /**
    * @brief Detects new features in the current image
@@ -113,7 +113,8 @@ protected:
    */
   void perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, const cv::Mat &mask0,
                                 const cv::Mat &mask1, size_t cam_id_left, size_t cam_id_right, std::vector<cv::KeyPoint> &pts0,
-                                std::vector<cv::KeyPoint> &pts1, std::vector<size_t> &ids0, std::vector<size_t> &ids1, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
+                                std::vector<cv::KeyPoint> &pts1, std::vector<size_t> &ids0, std::vector<size_t> &ids1, std::vector<cv::KeyPoint> &pts0_dynamic,
+                                        std::vector<cv::KeyPoint> &pts1_dynamic, std::vector<size_t> &ids0_dynamic, std::vector<size_t> &ids1_dynamic, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1);
 
   /**
    * @brief KLT track between two images, and do RANSAC afterwards
@@ -130,7 +131,8 @@ protected:
    * If the second vector is non-empty, it will be used as an initial guess of where the keypoints are in the second image.
    */
   void perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &pts0,
-                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out0, std::vector<uchar> &mask_out1);
+                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out0, std::vector<uchar> &mask_out1,
+                        std::vector<uchar> &mask_out1_dynamic, std::vector<cv::KeyPoint> &kpts0_dynamic, std::vector<cv::KeyPoint> &kpts1_dynamic);
 
   // Parameters for our FAST grid detector
   int threshold;

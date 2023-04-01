@@ -28,7 +28,7 @@
 
 using namespace ov_core;
 
-void TrackAruco::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
+void TrackAruco::feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, std::unordered_set<size_t> &tracked_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1, const Eigen::Matrix<double, 3, 1> p_C0inC1) {
 
   // Error check that we have all the data
   if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {

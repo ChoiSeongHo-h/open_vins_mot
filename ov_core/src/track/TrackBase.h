@@ -27,6 +27,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <opencv2/core/core.hpp>
@@ -94,7 +95,7 @@ public:
    * @brief Process a new image
    * @param message Contains our timestamp, images, and camera ids
    */
-  virtual void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) = 0;
+  virtual void feed_new_camera(const CameraData &message, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C0, std::vector<std::vector<cv::Point2f>> &klt_passed_pts_C1, std::vector<size_t> &raw_idcs, std::unordered_set<size_t> &tracked_idcs, const Eigen::Matrix<double, 3, 3> R_C0toC1 = Eigen::Matrix<double, 3, 3>(), const Eigen::Matrix<double, 3, 1> p_C0inC1 = Eigen::Matrix<double, 3, 1>()) = 0;
 
   /**
    * @brief Shows features extracted in the last image
@@ -184,9 +185,11 @@ protected:
 
   /// Last set of tracked points
   std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last;
+  std::unordered_map<size_t, std::vector<cv::KeyPoint>> pts_last_dynamic;
 
   /// Set of IDs of each current feature in the database
   std::unordered_map<size_t, std::vector<size_t>> ids_last;
+  std::unordered_map<size_t, std::vector<size_t>> ids_last_dynamic;
 
   /// Master ID for this tracker (atomic to allow for multi-threading)
   std::atomic<size_t> currid;

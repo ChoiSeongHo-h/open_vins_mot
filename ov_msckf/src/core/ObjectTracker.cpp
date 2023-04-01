@@ -598,6 +598,7 @@ void ObjectTracker::optimize(const Eigen::Matrix4f &inliers_tf, const std::vecto
     Eigen::Vector3d p3d_refine = q_refine * p3ds_para[i] + p_refine;
     size_t idx = compact_idcs[i];
     p3ds_now->at(idx) = pcl::PointXYZ((float)p3d_refine.x(), (float)p3d_refine.y(), (float)p3d_refine.z());
+    p2ds_C0_now[idx] = Eigen::Vector2d(p3d_refine.x()/p3d_refine.z(), p3d_refine.y()/p3d_refine.z());
   }
 }
 
@@ -804,12 +805,14 @@ printf("%d -> %d\n", pairs[i].first, pairs[i].second);
 
 }
 
-void ObjectTracker::track(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C0, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C1, const std::vector<size_t> &all_raw_idcs) {
+void ObjectTracker::track(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C0, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C1, const std::vector<size_t> &all_raw_idcs, std::unordered_set<size_t> &tracked_idcs) {
 
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
 
+  tracked_idcs.clear();
   if (all_p2ds_set_C0[0].empty()) {
-cv::waitKey(1);
+// cv::imshow("test", test_l);
+// cv::waitKey(1);
 
     R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
     p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
@@ -845,6 +848,7 @@ std::cout<<std::endl;
       for (size_t pt_idx = 0; pt_idx<labeled_raw_idcs[label_idx].size(); ++pt_idx) {
         size_t raw_idx = labeled_raw_idcs[label_idx][pt_idx];
         raw_idcs_table_now.emplace(raw_idx, label_idx);
+        tracked_idcs.emplace(raw_idx);
       }
     } 
 
@@ -858,8 +862,8 @@ std::cout<<std::endl;
 
   }
 
-cv::imshow("test", test_l);
-cv::waitKey(1);
+// cv::imshow("test", test_l);
+// cv::waitKey(1);
 
   R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
   p_IinG_prev = Eigen::Vector3d(state->_imu->pos());

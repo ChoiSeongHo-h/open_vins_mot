@@ -30,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 #include "VioManagerOptions.h"
 #include "ObjectTracker.h"
@@ -183,6 +184,8 @@ protected:
 
   /// Our master state object :D
   std::shared_ptr<State> state;
+
+  std::unordered_set<size_t> tracked_idcs;
 
   /// Propagator of our state
   std::shared_ptr<Propagator> propagator;

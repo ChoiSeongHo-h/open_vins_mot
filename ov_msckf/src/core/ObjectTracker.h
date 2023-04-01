@@ -23,7 +23,7 @@ using namespace ov_msckf;
 
 class ObjectTracker {
 public:
-  void track(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &raw_pts_C0, const std::vector<std::vector<cv::Point2f>> &raw_pts_C1, const std::vector<size_t> &raw_idcs_raw);
+  void track(const ov_core::CameraData &message, const std::shared_ptr<ov_msckf::State> &state, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C0, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C1, const std::vector<size_t> &all_raw_idcs, std::unordered_set<size_t> &tracked_idcs);
 
 private:
   class ReprojectionErrorCostFunction;

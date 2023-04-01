@@ -280,17 +280,17 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   if (params.use_stereo) {
     auto R_C0toC1 = R_IBtoC1 * R_IBtoC0.transpose();
     auto p_C0inC1 = - R_C0toC1 * p_IBinC0 + p_IBinC1;
-    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, R_C0toC1, p_C0inC1);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, tracked_idcs, R_C0toC1, p_C0inC1);
   }
   else {
-    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
+    trackFEATS->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, tracked_idcs);
   }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
   // NOTE: thus we just call the stereo tracking if we are doing binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
+    trackARUCO->feed_new_camera(message, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, tracked_idcs);
   }
   rT2 = boost::posix_time::microsec_clock::local_time();
 
@@ -308,7 +308,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
       updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
 printf("mot from zupt\n");
 
-      object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
+      object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, tracked_idcs);
       return;
     }
   }
@@ -329,7 +329,7 @@ printf("mot from zupt\n");
 
   // select dynamic pts
 printf("mot from normal\n");
-  object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs);
+  object_tracker->track(message, state, tracked_raw_pts_C0, tracked_raw_pts_C1, raw_idcs, tracked_idcs);
 }
 
 void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
