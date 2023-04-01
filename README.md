@@ -150,3 +150,8 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 
 ## Transformation association over time using the Hungarian algorithm
 ![image](https://user-images.githubusercontent.com/72921481/226544979-ec2e09cb-7e57-438f-b41e-e24b249e0904.png)
+
+
+## Focusing on dynamic objects
+![Screenshot from 2023-04-01 23-18-44](https://user-images.githubusercontent.com/72921481/229295942-f627846e-55fb-4112-9a9d-c213187eed9d.png)
+
