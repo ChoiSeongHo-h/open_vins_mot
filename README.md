@@ -153,5 +153,6 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 
 
 ## Focusing on dynamic objects
-![Screenshot from 2023-04-01 23-18-44](https://user-images.githubusercontent.com/72921481/229295942-f627846e-55fb-4112-9a9d-c213187eed9d.png)
+![Screenshot from 2023-04-02 22-38-56](https://user-images.githubusercontent.com/72921481/229356816-db28c492-6510-4e3d-8b57-ba76763bfbfe.png)
+
 
