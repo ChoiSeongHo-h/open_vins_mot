@@ -339,6 +339,11 @@ for(int i = 0; i<pts_left_old_dynamic.size(); ++i)
                            ids_right_old_dynamic, R_C0toC1, p_C0inC1);
   rT3 = boost::posix_time::microsec_clock::local_time();
 
+for(int i = 0; i<pts_left_old.size(); ++i)
+{
+  cv::circle(test_l, pts_left_old[i].pt, 3, cv::Scalar(255,0,0), 3);
+}
+
   // Our return success masks, and predicted new features
   std::vector<uchar> mask_ll, mask_rr, mask_ll_klt, mask_rr_klt;
   std::vector<uchar> mask_ll_klt_dynamic, mask_rr_klt_dynamic;
@@ -733,74 +738,11 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
                                         const cv::Mat &mask1, size_t cam_id_left, size_t cam_id_right, std::vector<cv::KeyPoint> &pts0,
                                         std::vector<cv::KeyPoint> &pts1, std::vector<size_t> &ids0, std::vector<size_t> &ids1, std::vector<cv::KeyPoint> &pts0_dynamic,
                                         std::vector<cv::KeyPoint> &pts1_dynamic, std::vector<size_t> &ids0_dynamic, std::vector<size_t> &ids1_dynamic, const Eigen::Matrix<double, 3, 3> &R_C0toC1, const Eigen::Matrix<double, 3, 1> &p_C0inC1) {
-
-  // Create a 2D occupancy grid for this current image
-  // Note that we scale this down, so that each grid point is equal to a set of pixels
-  // This means that we will reject points that less then grid_px_size points away then existing features
   cv::Size size_close0((int)((float)img0pyr.at(0).cols / (float)min_px_dist),
                        (int)((float)img0pyr.at(0).rows / (float)min_px_dist)); // width x height
-  cv::Mat grid_2d_close0 = cv::Mat::zeros(size_close0, CV_8UC1);
+  cv::Size size_grid0(grid_x, grid_y); // width x height
   float size_x0 = (float)img0pyr.at(0).cols / (float)grid_x;
   float size_y0 = (float)img0pyr.at(0).rows / (float)grid_y;
-  cv::Size size_grid0(grid_x, grid_y); // width x height
-  cv::Mat grid_2d_grid0 = cv::Mat::zeros(size_grid0, CV_8UC1);
-  cv::Mat mask0_updated = mask0.clone();
-  auto it0 = pts0.begin();
-  auto it1 = ids0.begin();
-  while (it0 != pts0.end()) {
-    // Get current left keypoint, check that it is in bounds
-    cv::KeyPoint kpt = *it0;
-    int x = (int)kpt.pt.x;
-    int y = (int)kpt.pt.y;
-    int edge = 10;
-    if (x < edge || x >= img0pyr.at(0).cols - edge || y < edge || y >= img0pyr.at(0).rows - edge) {
-      it0 = pts0.erase(it0);
-      it1 = ids0.erase(it1);
-      continue;
-    }
-    // Calculate mask coordinates for close points
-    int x_close = (int)(kpt.pt.x / (float)min_px_dist);
-    int y_close = (int)(kpt.pt.y / (float)min_px_dist);
-    if (x_close < 0 || x_close >= size_close0.width || y_close < 0 || y_close >= size_close0.height) {
-      it0 = pts0.erase(it0);
-      it1 = ids0.erase(it1);
-      continue;
-    }
-    // Calculate what grid cell this feature is in
-    int x_grid = std::floor(kpt.pt.x / size_x0);
-    int y_grid = std::floor(kpt.pt.y / size_y0);
-    if (x_grid < 0 || x_grid >= size_grid0.width || y_grid < 0 || y_grid >= size_grid0.height) {
-      it0 = pts0.erase(it0);
-      it1 = ids0.erase(it1);
-      continue;
-    }
-    // Check if this keypoint is near another point
-    if (grid_2d_close0.at<uint8_t>(y_close, x_close) > 127) {
-      it0 = pts0.erase(it0);
-      it1 = ids0.erase(it1);
-      continue;
-    }
-    // Now check if it is in a mask area or not
-    // NOTE: mask has max value of 255 (white) if it should be
-    if (mask0.at<uint8_t>(y, x) > 127) {
-      it0 = pts0.erase(it0);
-      it1 = ids0.erase(it1);
-      continue;
-    }
-    // Else we are good, move forward to the next point
-    grid_2d_close0.at<uint8_t>(y_close, x_close) = 255;
-    if (grid_2d_grid0.at<uint8_t>(y_grid, x_grid) < 255) {
-      grid_2d_grid0.at<uint8_t>(y_grid, x_grid) += 1;
-    }
-    // Append this to the local mask of the image
-    if (x - min_px_dist >= 0 && x + min_px_dist < img0pyr.at(0).cols && y - min_px_dist >= 0 && y + min_px_dist < img0pyr.at(0).rows) {
-      cv::Point pt1(x - min_px_dist, y - min_px_dist);
-      cv::Point pt2(x + min_px_dist, y + min_px_dist);
-      cv::rectangle(mask0_updated, pt1, pt2, cv::Scalar(255));
-    }
-    it0++;
-    it1++;
-  }
 
   // rm some past dynamic pts
   cv::Mat grid_2d_close0_dynamic = cv::Mat::zeros(size_close0, CV_8UC1);
@@ -869,8 +811,74 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     it1_right_dynamic++;
   }
 
-
-
+  // Create a 2D occupancy grid for this current image
+  // Note that we scale this down, so that each grid point is equal to a set of pixels
+  // This means that we will reject points that less then grid_px_size points away then existing features
+  cv::Mat grid_2d_close0 = cv::Mat::zeros(size_close0, CV_8UC1);
+  cv::Mat grid_2d_grid0 = cv::Mat::zeros(size_grid0, CV_8UC1);
+  cv::Mat mask0_updated = mask0.clone();
+  auto it0 = pts0.begin();
+  auto it1 = ids0.begin();
+  while (it0 != pts0.end()) {
+    // Get current left keypoint, check that it is in bounds
+    cv::KeyPoint kpt = *it0;
+    int x = (int)kpt.pt.x;
+    int y = (int)kpt.pt.y;
+    int edge = 10;
+    if (x < edge || x >= img0pyr.at(0).cols - edge || y < edge || y >= img0pyr.at(0).rows - edge) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // Calculate mask coordinates for close points
+    int x_close = (int)(kpt.pt.x / (float)min_px_dist);
+    int y_close = (int)(kpt.pt.y / (float)min_px_dist);
+    if (x_close < 0 || x_close >= size_close0.width || y_close < 0 || y_close >= size_close0.height) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // Calculate what grid cell this feature is in
+    int x_grid = std::floor(kpt.pt.x / size_x0);
+    int y_grid = std::floor(kpt.pt.y / size_y0);
+    if (x_grid < 0 || x_grid >= size_grid0.width || y_grid < 0 || y_grid >= size_grid0.height) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // Check if this keypoint is near another point
+    if (grid_2d_close0.at<uint8_t>(y_close, x_close) > 127) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // Now check if it is in a mask area or not
+    // NOTE: mask has max value of 255 (white) if it should be
+    if (mask0.at<uint8_t>(y, x) > 127) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // avoid dynamic region
+    if (grid_2d_grid0_dynamic.at<uint8_t>(y_grid, x_grid) == 255) {
+      it0 = pts0.erase(it0);
+      it1 = ids0.erase(it1);
+      continue;
+    }
+    // Else we are good, move forward to the next point
+    grid_2d_close0.at<uint8_t>(y_close, x_close) = 255;
+    if (grid_2d_grid0.at<uint8_t>(y_grid, x_grid) < 255) {
+      grid_2d_grid0.at<uint8_t>(y_grid, x_grid) += 1;
+    }
+    // Append this to the local mask of the image
+    if (x - min_px_dist >= 0 && x + min_px_dist < img0pyr.at(0).cols && y - min_px_dist >= 0 && y + min_px_dist < img0pyr.at(0).rows) {
+      cv::Point pt1(x - min_px_dist, y - min_px_dist);
+      cv::Point pt2(x + min_px_dist, y + min_px_dist);
+      cv::rectangle(mask0_updated, pt1, pt2, cv::Scalar(255));
+    }
+    it0++;
+    it1++;
+  }
 
 // auto now = std::chrono::system_clock::now();
 // auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
@@ -905,7 +913,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     std::vector<std::pair<int, int>> valid_locs;
     for (int x = 0; x < grid_2d_grid0.cols; x++) {
       for (int y = 0; y < grid_2d_grid0.rows; y++) {
-        if ((int)grid_2d_grid0.at<uint8_t>(y, x) < num_features_grid_req && (int)mask0_grid.at<uint8_t>(y, x) != 255) {
+        if ((int)grid_2d_grid0.at<uint8_t>(y, x) < num_features_grid_req && (int)mask0_grid.at<uint8_t>(y, x) != 255 && grid_2d_grid0_dynamic.at<uint8_t>(y, x) != 255) {
           valid_locs.emplace_back(x, y);
         }
       }
@@ -1143,14 +1151,73 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     }
   }
 
-  // RIGHT: Now summarise the number of tracks in the right image
-  // RIGHT: We will try to extract some monocular features if we have the room
-  // RIGHT: This will also remove features if there are multiple in the same location
   cv::Size size_close1((int)((float)img1pyr.at(0).cols / (float)min_px_dist), (int)((float)img1pyr.at(0).rows / (float)min_px_dist));
-  cv::Mat grid_2d_close1 = cv::Mat::zeros(size_close1, CV_8UC1);
   float size_x1 = (float)img1pyr.at(0).cols / (float)grid_x;
   float size_y1 = (float)img1pyr.at(0).rows / (float)grid_y;
   cv::Size size_grid1(grid_x, grid_y); // width x height
+
+  // refine right dynamic pts
+  it0_left_dynamic = pts0_dynamic.begin();
+  it1_left_dynamic = ids0_dynamic.begin();
+  it0_right_dynamic = pts1_dynamic.begin();
+  it1_right_dynamic = ids1_dynamic.begin();
+  cv::Mat grid_2d_grid1_dynamic = cv::Mat::zeros(size_grid1, CV_8UC1);
+  while (it0_right_dynamic != pts1_dynamic.end()) {
+    // Get current left keypoint, check that it is in bounds
+    cv::KeyPoint kpt = *it0_right_dynamic;
+    int x = (int)kpt.pt.x;
+    int y = (int)kpt.pt.y;
+    int edge = 10;
+    if (x < edge || x >= img1pyr.at(0).cols - edge || y < edge || y >= img1pyr.at(0).rows - edge) {
+      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
+      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
+      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
+      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
+      continue;
+    }
+    // Calculate mask coordinates for close points
+    int x_close = (int)(kpt.pt.x / (float)min_px_dist);
+    int y_close = (int)(kpt.pt.y / (float)min_px_dist);
+    if (x_close < 0 || x_close >= size_close1.width || y_close < 0 || y_close >= size_close1.height) {
+      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
+      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
+      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
+      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
+      continue;
+    }
+    // Calculate what grid cell this feature is in
+    int x_grid = std::floor(kpt.pt.x / size_x1);
+    int y_grid = std::floor(kpt.pt.y / size_y1);
+    if (x_grid < 0 || x_grid >= size_grid1.width || y_grid < 0 || y_grid >= size_grid1.height) {
+      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
+      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
+      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
+      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
+      continue;
+    }
+
+    // Now check if it is in a mask area or not
+    // NOTE: mask has max value of 255 (white) if it should be
+    if (mask1.at<uint8_t>(y, x) > 127) {
+      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
+      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
+      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
+      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
+      continue;
+    }
+
+    grid_2d_grid1_dynamic.at<uint8_t>(y_grid, x_grid) = 255;
+
+    it0_left_dynamic++;
+    it1_left_dynamic++;
+    it0_right_dynamic++;
+    it1_right_dynamic++;
+  }
+
+  // RIGHT: Now summarise the number of tracks in the right image
+  // RIGHT: We will try to extract some monocular features if we have the room
+  // RIGHT: This will also remove features if there are multiple in the same location
+  cv::Mat grid_2d_close1 = cv::Mat::zeros(size_close1, CV_8UC1);
   cv::Mat grid_2d_grid1 = cv::Mat::zeros(size_grid1, CV_8UC1);
   it0 = pts1.begin();
   it1 = ids1.begin();
@@ -1199,6 +1266,14 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
       it1 = ids1.erase(it1);
       continue;
     }
+
+    //avoid dynamic region
+    if (grid_2d_grid1_dynamic.at<uint8_t>(y_grid, x_grid) == 255) {
+      it0 = pts1.erase(it0);
+      it1 = ids1.erase(it1);
+      continue;
+    }
+
     // Else we are good, move forward to the next point
     grid_2d_close1.at<uint8_t>(y_grid, x_grid) = 255;
     if (grid_2d_grid1.at<uint8_t>(y_grid, x_grid) < 255) {
@@ -1206,61 +1281,6 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     }
     it0++;
     it1++;
-  }
-
-  // refine right dynamic pts
-  it0_left_dynamic = pts0_dynamic.begin();
-  it1_left_dynamic = ids0_dynamic.begin();
-  it0_right_dynamic = pts1_dynamic.begin();
-  it1_right_dynamic = ids1_dynamic.begin();
-  while (it0_right_dynamic != pts1_dynamic.end()) {
-    // Get current left keypoint, check that it is in bounds
-    cv::KeyPoint kpt = *it0_right_dynamic;
-    int x = (int)kpt.pt.x;
-    int y = (int)kpt.pt.y;
-    int edge = 10;
-    if (x < edge || x >= img1pyr.at(0).cols - edge || y < edge || y >= img1pyr.at(0).rows - edge) {
-      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
-      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
-      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
-      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
-      continue;
-    }
-    // Calculate mask coordinates for close points
-    int x_close = (int)(kpt.pt.x / (float)min_px_dist);
-    int y_close = (int)(kpt.pt.y / (float)min_px_dist);
-    if (x_close < 0 || x_close >= size_close1.width || y_close < 0 || y_close >= size_close1.height) {
-      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
-      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
-      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
-      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
-      continue;
-    }
-    // Calculate what grid cell this feature is in
-    int x_grid = std::floor(kpt.pt.x / size_x1);
-    int y_grid = std::floor(kpt.pt.y / size_y1);
-    if (x_grid < 0 || x_grid >= size_grid1.width || y_grid < 0 || y_grid >= size_grid1.height) {
-      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
-      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
-      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
-      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
-      continue;
-    }
-
-    // Now check if it is in a mask area or not
-    // NOTE: mask has max value of 255 (white) if it should be
-    if (mask1.at<uint8_t>(y, x) > 127) {
-      it0_left_dynamic = pts0_dynamic.erase(it0_left_dynamic);
-      it1_left_dynamic = ids0_dynamic.erase(it1_left_dynamic);
-      it0_right_dynamic = pts1_dynamic.erase(it0_right_dynamic);
-      it1_right_dynamic = ids1_dynamic.erase(it1_right_dynamic);
-      continue;
-    }
-
-    it0_left_dynamic++;
-    it1_left_dynamic++;
-    it0_right_dynamic++;
-    it1_right_dynamic++;
   }
 
   // RIGHT: if we need features we should extract them in the current frame
@@ -1283,7 +1303,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     std::vector<std::pair<int, int>> valid_locs;
     for (int x = 0; x < grid_2d_grid1.cols; x++) {
       for (int y = 0; y < grid_2d_grid1.rows; y++) {
-        if ((int)grid_2d_grid1.at<uint8_t>(y, x) < num_features_grid_req && (int)mask1_grid.at<uint8_t>(y, x) != 255) {
+        if ((int)grid_2d_grid1.at<uint8_t>(y, x) < num_features_grid_req && (int)mask1_grid.at<uint8_t>(y, x) != 255 && grid_2d_grid1_dynamic.at<uint8_t>(y, x) != 255) {
           valid_locs.emplace_back(x, y);
         }
       }
