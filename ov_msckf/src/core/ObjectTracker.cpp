@@ -133,7 +133,7 @@ void ObjectTracker::get_hungarian_pairs(const std::vector<std::vector<int>> &cos
   }
 }
 
-cv::Scalar ObjectTracker::randomColor() {
+cv::Scalar ObjectTracker::get_random_color() {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> dis(0, 255);
@@ -212,11 +212,11 @@ auto from = cv::Point2d(fx0*p2ds_C0_now[i].x()+cx0, fy0*p2ds_C0_now[i].y()+cy0);
         graphs[idcs[j]].emplace_back(i);
 auto from_prev = cv::Point2d(fx0*p2ds_C0_prev[i].x()+cx0, fy0*p2ds_C0_prev[i].y()+cy0);
 cv::arrowedLine(test_l, from_prev, from, cv::Scalar(255,0,0), 2);
-cv::putText(test_l, std::to_string(i), from, 1, 2, cv::Scalar(0,0,255), 2);
+// cv::putText(test_l, std::to_string(i), from, 1, 2, cv::Scalar(0,0,255), 2);
 auto to = cv::Point2d(fx0*p2ds_C0_now[idcs[j]].x()+cx0, fy0*p2ds_C0_now[idcs[j]].y()+cy0);
 auto to_prev = cv::Point2d(fx0*p2ds_C0_prev[idcs[j]].x()+cx0, fy0*p2ds_C0_prev[idcs[j]].y()+cy0);
 cv::arrowedLine(test_l, to_prev, to, cv::Scalar(255,0,0), 2);
-cv::putText(test_l, std::to_string(idcs[j]), to, 1, 2, cv::Scalar(0,0,255), 2);
+// cv::putText(test_l, std::to_string(idcs[j]), to, 1, 2, cv::Scalar(0,0,255), 2);
 cv::line(test_l, from, to, cv::Scalar(0, 0, 255), 1);
 cv::circle(test_l, to, 3, cv::Scalar(255,255,255), 3);
       }
@@ -729,7 +729,7 @@ for(int i = 0; i<labeled_idcs_2d.size(); ++i)
 printf("graphs %d :\n", i);
 for(int j = 0; j<labeled_idcs_2d[i].size(); ++j)
 {
-auto label_color = randomColor();
+auto label_color = get_random_color();
 if(labeled_states_2d[i][j] != 1)
 label_color = cv::Scalar(255,255,255);
 printf("{");
@@ -739,12 +739,12 @@ printf("%d ", labeled_idcs_2d[i][j][k]);
 int idx = labeled_idcs_2d[i][j][k];
 auto q = cv::Point2d(fx0*p2ds_C0_now[idx].x()+cx0, fy0*p2ds_C0_now[idx].y()+cy0);
 cv::circle(test_l, q, 3, label_color, 3);
-if(labeled_states_2d[i][j] == 1)
-{
-cv::circle(test_l, q, 13, cv::Scalar(0,255,0), 2);
-std::string s = std::to_string(raw_idcs[idx]);
-cv::putText(test_l, s, q, 1, 1, cv::Scalar(0, 255, 0));
-}
+// if(labeled_states_2d[i][j] == 1)
+// {
+// cv::circle(test_l, q, 13, cv::Scalar(0,255,0), 2);
+// std::string s = std::to_string(raw_idcs[idx]);
+// cv::putText(test_l, s, q, 1, 1, cv::Scalar(0, 255, 0));
+// }
 }
 printf("}(%d) ", labeled_states_2d[i][j]);
 }
@@ -792,16 +792,17 @@ std::cout<<std::endl;
 }
 std::cout<<std::endl;
 
-  
   get_hungarian_pairs(cost_matrix, pairs);
-
+  std::vector<std::pair<size_t, size_t>> pairs_temp;
 printf("pairs\n");
-for(int i = 0; i<pairs.size(); ++i)
-{
-if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val)
-continue;
+  for(int i = 0; i<pairs.size(); ++i) {
+    if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val)
+      continue;
+  
+    pairs_temp.emplace_back(pairs[i]);
 printf("%d -> %d\n", pairs[i].first, pairs[i].second);
-}
+  }
+  pairs = pairs_temp;
 
 }
 
@@ -810,10 +811,18 @@ void ObjectTracker::track(const ov_core::CameraData &message, const std::shared_
 cv::cvtColor(message.images.at(0), test_l, cv::COLOR_GRAY2RGB);
 
   tracked_idcs.clear();
-  if (all_p2ds_set_C0[0].empty()) {
-// cv::imshow("test", test_l);
-// cv::waitKey(1);
 
+  size_t num_labels_now = 0;
+  std::unordered_map<size_t, size_t> raw_idcs_table_now;
+  std::map<size_t, cv::Scalar> tracked_labels_table_now;
+
+  if (all_p2ds_set_C0[0].empty()) {
+cv::imshow("test", test_l);
+cv::waitKey(1);
+
+    raw_idcs_table_prev = raw_idcs_table_now;
+    num_labels_prev = num_labels_now;
+    tracked_labels_table_prev = tracked_labels_table_now;
     R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
     p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
     return;
@@ -842,29 +851,53 @@ std::cout<<std::endl;
     std::vector<std::vector<size_t>> labeled_raw_idcs;
     divide_graphs(graphed_idcs, labeled_idcs, labeled_raw_idcs);
     
-    size_t num_labels_now = labeled_raw_idcs.size();
-    std::unordered_map<size_t, size_t> raw_idcs_table_now;
+    num_labels_now = labeled_raw_idcs.size();
     for (size_t label_idx = 0; label_idx<num_labels_now; ++label_idx) {
       for (size_t pt_idx = 0; pt_idx<labeled_raw_idcs[label_idx].size(); ++pt_idx) {
         size_t raw_idx = labeled_raw_idcs[label_idx][pt_idx];
         raw_idcs_table_now.emplace(raw_idx, label_idx);
         tracked_idcs.emplace(raw_idx);
       }
-    } 
+      tracked_labels_table_now.emplace(label_idx, get_random_color());
+    }
 
     std::vector<std::pair<size_t, size_t>> pairs;
     if (num_labels_now > 0 && num_labels_prev > 0) {
       get_pair(num_labels_now, labeled_raw_idcs, pairs);
     }
 
-    raw_idcs_table_prev = raw_idcs_table_now;
-    num_labels_prev = num_labels_now;
+for (size_t i = 0; i<pairs.size(); ++i) {
+  size_t label_idx_now = pairs[i].first;
+  size_t label_idx_prev = pairs[i].second;
+
+  double x0 = std::numeric_limits<double>::max();
+  double x1 = -std::numeric_limits<double>::max();
+  double y0 = std::numeric_limits<double>::max();
+  double y1 = -std::numeric_limits<double>::max();
+  for (size_t pt_idx = 0; pt_idx<labeled_idcs[label_idx_now].size(); ++pt_idx) {
+    size_t idx = labeled_idcs[label_idx_now][pt_idx];
+    x0 = std::min(x0, p2ds_C0_now[idx].x());
+    x1 = std::max(x1, p2ds_C0_now[idx].x());
+    y0 = std::min(y0, p2ds_C0_now[idx].y());
+    y1 = std::max(y1, p2ds_C0_now[idx].y());
+  }
+  auto q0 = cv::Point2d(fx0*x0+cx0, fy0*y0+cy0);
+  auto q1 = cv::Point2d(fx0*x1+cx0, fy0*y1+cy0);
+
+  auto color = tracked_labels_table_prev[label_idx_prev];
+  tracked_labels_table_now[label_idx_now] = color;
+  cv::rectangle(test_l, cv::Rect2d(q0, q1), color, 3);
+} 
+
 
   }
 
-// cv::imshow("test", test_l);
-// cv::waitKey(1);
+cv::imshow("test", test_l);
+cv::waitKey(1);
 
+  raw_idcs_table_prev = raw_idcs_table_now;
+  num_labels_prev = num_labels_now;
+  tracked_labels_table_prev = tracked_labels_table_now;
   R_GtoI_prev = Eigen::Matrix3d(state->_imu->Rot());
   p_IinG_prev = Eigen::Vector3d(state->_imu->pos());
 }

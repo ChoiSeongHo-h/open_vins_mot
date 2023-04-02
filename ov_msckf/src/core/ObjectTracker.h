@@ -87,6 +87,8 @@ private:
   
   std::unordered_map<size_t, size_t> raw_idcs_table_prev;
   
+  std::map<size_t, cv::Scalar> tracked_labels_table_prev;
+
   size_t num_labels_prev;
 
   void init(const std::shared_ptr<ov_msckf::State> &state);
@@ -95,7 +97,7 @@ private:
 
   void get_hungarian_pairs(const std::vector<std::vector<int>> &cost, std::vector<std::pair<size_t, size_t>> &pairs);
 
-  cv::Scalar randomColor();
+  cv::Scalar get_random_color();
 
   int fact (const int n);
 

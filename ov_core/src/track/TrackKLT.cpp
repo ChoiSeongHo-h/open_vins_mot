@@ -298,21 +298,6 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
     return;
   }
 
-// cv::Mat test_l;
-// cv::cvtColor(img_pyramid_last[cam_id_left].at(0), test_l, cv::COLOR_GRAY2RGB);
-// for(int i = 0; i<pts_last_dynamic[cam_id_left].size(); ++i)
-// {
-//   int idx = ids_last_dynamic[cam_id_left][i];
-//   auto it = tracked_idcs.find(idx);
-//   if(it == tracked_idcs.end())
-//     continue;
-  
-//   auto &kpt_test = pts_last_dynamic[cam_id_left][i];
-//   cv::circle(test_l, kpt_test.pt, 3, cv::Scalar(0,255,0), 3);
-// }
-// cv::imshow("test", test_l);
-// cv::waitKey(1);
-
   // First we should make that the last images have enough features so we can do KLT
   // This will "top-off" our number of tracks so always have a constant number
   int pts_before_detect = (int)pts_last[cam_id_left].size();
@@ -325,24 +310,11 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   auto ids_left_old_dynamic = ids_last_dynamic[cam_id_left];
   auto ids_right_old_dynamic = ids_last_dynamic[cam_id_right];
 
-cv::Mat test_l;
-cv::cvtColor(img_pyramid_last[cam_id_left].at(0), test_l, cv::COLOR_GRAY2RGB);
-for(int i = 0; i<pts_left_old_dynamic.size(); ++i)
-{
-  cv::circle(test_l, pts_left_old_dynamic[i].pt, 5, cv::Scalar(0,0,255), 3);
-}
-
-
   perform_detection_stereo(img_pyramid_last[cam_id_left], img_pyramid_last[cam_id_right], img_mask_last[cam_id_left],
                            img_mask_last[cam_id_right], cam_id_left, cam_id_right, pts_left_old, pts_right_old, ids_left_old,
                            ids_right_old, pts_left_old_dynamic, pts_right_old_dynamic, ids_left_old_dynamic,
                            ids_right_old_dynamic, R_C0toC1, p_C0inC1);
   rT3 = boost::posix_time::microsec_clock::local_time();
-
-for(int i = 0; i<pts_left_old.size(); ++i)
-{
-  cv::circle(test_l, pts_left_old[i].pt, 3, cv::Scalar(255,0,0), 3);
-}
 
   // Our return success masks, and predicted new features
   std::vector<uchar> mask_ll, mask_rr, mask_ll_klt, mask_rr_klt;
@@ -400,7 +372,6 @@ for(int i = 0; i<pts_left_old.size(); ++i)
     PRINT_ERROR(RED "[KLT-EXTRACTOR]: Failed to get enough points to do RANSAC, resetting.....\n" RESET);
     return;
   }
-  
 
   // Get our "good tracks"
   std::vector<cv::KeyPoint> good_left, good_right;
@@ -532,12 +503,8 @@ for(int i = 0; i<pts_left_old.size(); ++i)
       good_ids_left_dynamic.emplace_back(ids_left_old_dynamic.at(i));
       good_ids_right_dynamic.emplace_back(ids_right_old_dynamic.at(i));
       raw_idcs.emplace_back(ids_left_old_dynamic.at(i));
-cv::circle(test_l, pts_left_old_dynamic[i].pt, 2, cv::Scalar(0,255,0), 3);
     }
   }
-
-cv::imshow("test", test_l);
-cv::waitKey(1);
 
   // Loop through all right points
   for (size_t i = 0; i < pts_right_new.size(); i++) {
@@ -880,15 +847,6 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     it1++;
   }
 
-// auto now = std::chrono::system_clock::now();
-// auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-// std::string filename = "/home/csh/test/test_img/" + std::to_string(now_ms);
-// cv::imwrite(filename+"_0.png", grid_2d_close0);
-// cv::imwrite(filename+"_1.png", grid_2d_grid0*10);
-// cv::imwrite(filename+"_2.png", mask0_updated);
-// cv::imshow("test", test_l);
-// cv::waitKey(1);
-
   // First compute how many more features we need to extract from this image
   double min_feat_percent = 0.50;
   int num_featsneeded_0 = num_features - (int)pts0.size();
@@ -968,7 +926,6 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
       kpts0_new_dynamic.emplace_back(kpt);
       pts0_new_dynamic.emplace_back(kpt.pt);
     }
-
 
     // TODO: Project points from the left frame into the right frame
     // TODO: This will not work for large baseline systems.....
