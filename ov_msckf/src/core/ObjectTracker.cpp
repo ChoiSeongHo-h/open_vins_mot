@@ -227,41 +227,45 @@ cv::circle(test_l, to, 3, cv::Scalar(255,255,255), 3);
 void ObjectTracker::reject_static_p3ds(const cv::Mat &all_p3ds_prev, const cv::Mat &all_p3ds_now, const cv::Mat &all_p3ds_pred, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C0, const std::vector<std::vector<cv::Point2f>> &all_p2ds_set_C1, const std::vector<size_t> &all_raw_idcs) {
   size_t num_p3ds = all_p3ds_prev.cols;
   for(size_t i = 0; i<num_p3ds; ++i) {
-    // Predicted points in a Euclidean frame
-    double x_pred = all_p3ds_pred.at<double>(0, i)/all_p3ds_pred.at<double>(3, i);
-    double y_pred = all_p3ds_pred.at<double>(1, i)/all_p3ds_pred.at<double>(3, i);
-    double z_pred = all_p3ds_pred.at<double>(2, i)/all_p3ds_pred.at<double>(3, i);
-
-    // Observed points in a Euclidean frame
-    double x_now = all_p3ds_now.at<double>(0, i)/all_p3ds_now.at<double>(3, i);
-    double y_now = all_p3ds_now.at<double>(1, i)/all_p3ds_now.at<double>(3, i);
-    double z_now = all_p3ds_now.at<double>(2, i)/all_p3ds_now.at<double>(3, i);
+    Eigen::Vector3d p3d_in_C0_pred(
+      all_p3ds_pred.at<double>(0, i)/all_p3ds_pred.at<double>(3, i),
+      all_p3ds_pred.at<double>(1, i)/all_p3ds_pred.at<double>(3, i),
+      all_p3ds_pred.at<double>(2, i)/all_p3ds_pred.at<double>(3, i)
+    );
+    Eigen::Vector3d p3d_in_C0_now(
+      all_p3ds_now.at<double>(0, i)/all_p3ds_now.at<double>(3, i),
+      all_p3ds_now.at<double>(1, i)/all_p3ds_now.at<double>(3, i),
+      all_p3ds_now.at<double>(2, i)/all_p3ds_now.at<double>(3, i)
+    );
 
     // L2 in Euclidean with z-direction penalty
-    double weighted_L2_3d = sqrt(pow(x_pred - x_now, 2) + pow(y_pred - y_now, 2) + (1/1.5) * pow(z_pred - z_now, 2));
+    Eigen::Vector3d weighted_diff = p3d_in_C0_pred-p3d_in_C0_now;
+    weighted_diff.z() *= Z_PENALTY;
+    double weighted_L2_3d = weighted_diff.norm();
 
     // reprojection error
-    double L2_2d = sqrt(pow(x_pred/z_pred - x_now/x_pred, 2) + pow(y_pred/z_pred - y_now/y_pred, 2));
+    Eigen::Vector2d p2d_C0_pred(p3d_in_C0_pred.x()/p3d_in_C0_pred.z(), p3d_in_C0_pred.y()/p3d_in_C0_pred.z());
+    auto &all_p2ds_C0_now = all_p2ds_set_C0[1];
+    Eigen::Vector2d p2d_C0_now((double)all_p2ds_C0_now[i].x, (double)all_p2ds_C0_now[i].y);
+    double L2_2d_C0 = (p2d_C0_pred-p2d_C0_now).norm();
+
+    Eigen::Vector3d p3d_in_C1_pred = R_C0toC1_now*p3d_in_C0_pred+p_C0inC1_now;
+    Eigen::Vector2d p2d_C1_pred(p3d_in_C1_pred.x()/p3d_in_C1_pred.z(), p3d_in_C1_pred.y()/p3d_in_C1_pred.z());
+    auto &all_p2ds_C1_now = all_p2ds_set_C1[1];
+    Eigen::Vector2d p2d_C1_now((double)all_p2ds_C1_now[i].x, (double)all_p2ds_C1_now[i].y);
+    double L2_2d_C1 = (p2d_C1_pred-p2d_C1_now).norm();
+    
+    double L2_2d = std::max(L2_2d_C0, L2_2d_C1);
+    
     // Insert is_dynamic points into a point cloud
     auto &all_p2ds_C0_prev = all_p2ds_set_C0[0];
     auto &all_p2ds_C1_prev = all_p2ds_set_C1[0];
-    auto &all_p2ds_C0_now = all_p2ds_set_C0[1];
-    auto &all_p2ds_C1_now = all_p2ds_set_C1[1];
-    if (z_pred < 100 && z_now < 100 && weighted_L2_3d < 100 && (L2_2d > 5/fx0 || weighted_L2_3d > 0.1)) {
-      double x_prev = all_p3ds_prev.at<double>(0, i)/all_p3ds_prev.at<double>(3, i);
-      double y_prev = all_p3ds_prev.at<double>(1, i)/all_p3ds_prev.at<double>(3, i);
-      double z_prev = all_p3ds_prev.at<double>(2, i)/all_p3ds_prev.at<double>(3, i);
-      p3ds_now->emplace_back(pcl::PointXYZ{(float)x_now, (float)y_now, (float)z_now});
-      p3ds_prev->emplace_back(pcl::PointXYZ{(float)x_prev, (float)y_prev, (float)z_prev});
+    if (p3d_in_C0_pred.z() < 100 && p3d_in_C0_now.z() < 100 && weighted_L2_3d < 100 && (L2_2d > 5/fx0 || weighted_L2_3d > 0.1)) {
+      p3ds_now->emplace_back(pcl::PointXYZ{(float)p3d_in_C0_now.x(), (float)p3d_in_C0_now.y(), (float)p3d_in_C0_now.z()});
+      p3ds_prev->emplace_back(pcl::PointXYZ{(float)p3d_in_C0_pred.x(), (float)p3d_in_C0_pred.y(), (float)p3d_in_C0_pred.z()});
       raw_idcs.emplace_back(all_raw_idcs[i]);
-      Eigen::Vector2d p2d_C0_now;
-      Eigen::Vector2d p2d_C0_prev;
-      Eigen::Vector2d p2d_C1_now;
-      Eigen::Vector2d p2d_C1_prev;
-      p2d_C0_now << (double)all_p2ds_C0_now[i].x, (double)all_p2ds_C0_now[i].y;
-      p2d_C0_prev << (double)all_p2ds_C0_prev[i].x, (double)all_p2ds_C0_prev[i].y;
-      p2d_C1_now << (double)all_p2ds_C1_now[i].x, (double)all_p2ds_C1_now[i].y;
-      p2d_C1_prev << (double)all_p2ds_C1_prev[i].x, (double)all_p2ds_C1_prev[i].y;
+      Eigen::Vector2d p2d_C0_prev((double)all_p2ds_C0_prev[i].x, (double)all_p2ds_C0_prev[i].y);
+      Eigen::Vector2d p2d_C1_prev((double)all_p2ds_C1_prev[i].x, (double)all_p2ds_C1_prev[i].y);
       p2ds_C0_now.emplace_back(p2d_C0_now);
       p2ds_C0_prev.emplace_back(p2d_C0_prev);
       p2ds_C1_now.emplace_back(p2d_C1_now);
@@ -414,38 +418,58 @@ bool ObjectTracker::pass_svd(std::vector<uchar> &mask_out, const std::vector<siz
 
   pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
   svd.estimateRigidTransformation(*inliers_prev, *inliers_now, inliers_tf);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_p3ds(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::transformPointCloud(*inliers_prev, *inliers_pred_p3ds, inliers_tf);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_obs(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::transformPointCloud(*inliers_prev, *inliers_pred_obs, inliers_tf);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_ego(new pcl::PointCloud<pcl::PointXYZ>);
   Eigen::Matrix4f T_C0BtoC0A_f = T_C0_prev_to_now.cast<float>();
   pcl::transformPointCloud(*inliers_prev, *inliers_pred_ego, T_C0BtoC0A_f);
 
   double weighted_L2_3d = 0.0;
-  double L2_2d = 0.0;
+  double L2_2d_C0 = 0.0;
+  double L2_2d_C1 = 0.0;
   double z_mean = 0.0;
   for (size_t i = 0; i<(size_t)max_elements; ++i) {
-    Eigen::Vector3f weighted_diff_3d = inliers_pred_p3ds->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
-    weighted_diff_3d.block<1, 1>(2, 0) *= Z_PENALTY;
+    Eigen::Vector3f weighted_diff_3d = inliers_pred_obs->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
+    weighted_diff_3d(2, 0) *= Z_PENALTY;
     weighted_L2_3d += (double)weighted_diff_3d.norm();
-    double u_pred_ego = (double)inliers_pred_ego->at(i).x/(double)inliers_pred_ego->at(i).z;
-    double v_pred_ego = (double)inliers_pred_ego->at(i).y/(double)inliers_pred_ego->at(i).z;
-    double u_pred_p2ds = (double)inliers_pred_p3ds->at(i).x/(double)inliers_pred_p3ds->at(i).z;
-    double v_pred_p2ds = (double)inliers_pred_p3ds->at(i).y/(double)inliers_pred_p3ds->at(i).z;
-    auto pt_pred_ego = cv::Point2d(u_pred_ego, v_pred_ego);
-    auto pt_pred_p2ds = cv::Point2d(u_pred_p2ds, v_pred_p2ds);
-    cv::Point2d diff_2d = pt_pred_ego-pt_pred_p2ds;
-    L2_2d += cv::norm(diff_2d);
-    z_mean += inliers_pred_p3ds->at(i).z;
+
+    Eigen::Vector2d p2d_pred_ego_C0(
+      (double)inliers_pred_ego->at(i).x/(double)inliers_pred_ego->at(i).z,
+      (double)inliers_pred_ego->at(i).y/(double)inliers_pred_ego->at(i).z
+    );
+    Eigen::Vector2d p2d_pred_obs_C0(
+      (double)inliers_pred_obs->at(i).x/(double)inliers_pred_obs->at(i).z,
+      (double)inliers_pred_obs->at(i).y/(double)inliers_pred_obs->at(i).z
+    );
+    L2_2d_C0 += (p2d_pred_ego_C0-p2d_pred_obs_C0).norm();
+
+    Eigen::Vector3d inliers_pred_ego_in_C1 = inliers_pred_ego->at(i).getVector3fMap().cast<double>();
+    inliers_pred_ego_in_C1 = R_C0toC1_now*inliers_pred_ego_in_C1 + p_C0inC1_now;
+    Eigen::Vector3d inliers_pred_obs_in_C1 = inliers_pred_obs->at(i).getVector3fMap().cast<double>();
+    inliers_pred_obs_in_C1 = R_C0toC1_now*inliers_pred_obs_in_C1 + p_C0inC1_now;
+    Eigen::Vector2d p2d_pred_ego_C1(
+      inliers_pred_ego_in_C1.x()/inliers_pred_ego_in_C1.z(),
+      inliers_pred_ego_in_C1.y()/inliers_pred_ego_in_C1.z()
+    );
+    Eigen::Vector2d p2d_pred_obs_C1(
+      inliers_pred_obs_in_C1.x()/inliers_pred_obs_in_C1.z(),
+      inliers_pred_obs_in_C1.y()/inliers_pred_obs_in_C1.z()
+    );
+    L2_2d_C1 += (p2d_pred_ego_C1-p2d_pred_obs_C1).norm();
+
+    z_mean += inliers_pred_obs->at(i).z;
   }
   weighted_L2_3d /= max_elements;
-  L2_2d *= fx0/max_elements;
+  L2_2d_C0 *= fx0/max_elements;
+  L2_2d_C1 *= fx1/max_elements;
   z_mean /= max_elements;
+  double L2_2d = std::max(L2_2d_C0, L2_2d_C1);
   double th_3d = ALPHA + BETA/max_elements;
   double th_2d = DELTA/z_mean + GAMMA/max_elements;
 
 printf("3d : %f / %f\n", weighted_L2_3d, th_3d);
-printf("2d : %f / %f\n", L2_2d, th_2d);
+printf("2d : %f / %f\n", L2_2d_C0, th_2d);
 printf("is_dynamic? %d\n", z_mean > 0.0 && weighted_L2_3d > th_3d && L2_2d > th_2d);
   if(z_mean > 0.0 && weighted_L2_3d > th_3d && L2_2d > th_2d) {
     return true;
