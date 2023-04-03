@@ -5,7 +5,9 @@ https://user-images.githubusercontent.com/72921481/229364790-3a80e7f2-2ea3-4612-
 
 ## Overview
 ![image](https://user-images.githubusercontent.com/72921481/229371399-285b49df-5162-418d-9648-8cccf1004b27.png)
-
+This system has the following features
+- Track dynamic objects without the help of deep learning to aid perception.
+- Improve localization accuracy by removing biased points.
 
 ## Environmental
 **OpenCV** 4.2   
