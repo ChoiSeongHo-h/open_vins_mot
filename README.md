@@ -1,25 +1,37 @@
-# open_vins_mot
+# OpenVINS with Moving Object Tracking
 
 
 https://user-images.githubusercontent.com/72921481/229364790-3a80e7f2-2ea3-4612-9ae1-74700cd98406.mp4
 
 ## Overview
-![image](https://user-images.githubusercontent.com/72921481/229371399-285b49df-5162-418d-9648-8cccf1004b27.png)
-This system has the following features
-- Track dynamic objects without the help of deep learning to aid perception.
-- Improve localization accuracy by removing biased points.
+![image](https://user-images.githubusercontent.com/72921481/229867588-b62e423f-14c6-4209-9eab-99bd366c3e3a.png)
+**The expected effect of this system is as follows:**
+- **Track dynamic objects** and assist perception systems **without deep learning**.
+- **Improve localization accuracy** by removing biased points.
+
+**This system procedure can be summarized as follows:**
+1. Outlier removal using stereo extrinsic.
+2. Static point removal using ego motion
+3. Neighborhood point graph generation using k-d tree
+4. Proposing rigid transformation, removal outliers, and removal static transformation using RANSAC
+5. Nonlinear optimization of points and dynamic rigid body transformations
+6. Improving tracking and localization accuracy by focusing on dynamic objects
 
 ## Environmental
-**OpenCV** 4.2   
-**Ceres** 2.1   
-**Eigen** 3.3.7   
-**Ubuntu** 20.04   
-**ROS** Noetic with **PCL** 1.10.0   
-**OpenVINS** 2.6.2   
-Testing on the **KAIST Complex Urban Dataset**   
+- **Stereo cameras** to determine a moving 3D point at a point in time
+- **IMU** to help prevent the system from being dominated by dynamic objects
+- **OpenCV** 4.2   
+- **Ceres** 2.1   
+- **Eigen** 3.3.7   
+- **Ubuntu** 20.04   
+- **ROS** Noetic with **PCL** 1.10.0   
+- **OpenVINS** 2.6.2   
+- Testing on the **KAIST Complex Urban Dataset**   
 
 ## Rejecting outliers using stereo extrinsics
-<img src = "https://user-images.githubusercontent.com/72921481/219631769-70dda35a-7cfb-4231-84f3-c2c070bbc06b.png" width="70%" height="70%">
+![image](https://user-images.githubusercontent.com/72921481/229905482-b76a9507-2645-4995-8732-33c5d62e5d2a.png)
+
+![image](https://user-images.githubusercontent.com/72921481/219631769-70dda35a-7cfb-4231-84f3-c2c070bbc06b.png)
 
 - **blue points**: inliers
 
@@ -39,8 +51,12 @@ If you want to compute a **more meaningful threshold**, you can take into accoun
 
 The stereo cameras are assumed to be time synchronised, as assumed by OpenVINS.
 
+The test is performed at both time `t-1` and `t`.
+
 ## Extracting dynamic points using L2 in 3D and reprojection errors
-<img src = "https://user-images.githubusercontent.com/72921481/220283402-932e872c-7f6a-4a10-a6ea-b5f9abe0aa8a.png" width="70%" height="70%">
+![image](https://user-images.githubusercontent.com/72921481/229908887-6b7899e6-e946-4272-8cc9-cc828c8aceb4.png)
+
+![image](https://user-images.githubusercontent.com/72921481/220283402-932e872c-7f6a-4a10-a6ea-b5f9abe0aa8a.png)
 
 - **white points**: observations from the previous frame
 
@@ -62,7 +78,7 @@ To extract dynamic points, I apply the following three conditions to the points 
 - The difference between prediction and observation in 3D is above a certain threshold.
 - The reprojection error in the undistorted normalized plane is above a certain threshold.
 
-I have the 3D point position at time `t-1`, the 3D point position at time `t`, and the transformation between time `t-1` and `t`. If the point is static, applying the transformation to the 3D point position at `t-1` will result in the same 3D point position at `t`. In other words, the prediction will match the observation. I compare the prediction and observation in both 2D and 3D.
+I have the 3D point position at time `t-1`, the 3D point position at time `t`, and the transformation between time `t-1` and `t`(ego motion). If the point is static, applying the transformation to the 3D point position at `t-1` will result in the same 3D point position at `t`. In other words, the prediction will match the observation. I compare the prediction and observation in both 2D and 3D.
 
 Although it's possible to detect dynamic objects by applying RANSAC on the fundamental matrix at simple `t-1` and `t`, there are drawbacks to using RANSAC:
 - The consensus of the fundamental matrix is based only on the distance to the epipolar line, i.e., the epipolar constraint.
@@ -72,8 +88,12 @@ Although it's possible to detect dynamic objects by applying RANSAC on the funda
 
 I penalize the z direction in the 3D comparison to compensate for the inaccurate depth of the stereo camera.
 
+For consistency, the re-projection error is evaluated for both viewpoints and the greater of the two is used.
+
 ## Graph construction using k-d tree
-<img src = "https://user-images.githubusercontent.com/72921481/220625831-a154603b-4e85-4cbb-9c41-88596bc39952.png" width="70%" height="70%">
+![image](https://user-images.githubusercontent.com/72921481/229906079-dd92f9e8-92e6-41fe-9919-c7821b57dcf5.png)
+
+![image](https://user-images.githubusercontent.com/72921481/220625831-a154603b-4e85-4cbb-9c41-88596bc39952.png)
 
 - **white points**: dynamic points
 
@@ -93,7 +113,9 @@ To address these issues, I construct the graph by using a k-d tree in 3D for the
 This algorithm has a time complexity of `O(N log N)`, where `N` is the number of dynamic points.
 
 ## Providing initial labels and removing outlier graphs using RANSAC and registration
-<img src = "https://user-images.githubusercontent.com/72921481/221565464-f8e7797a-ee8b-4aee-840d-12fe6725db25.png" width="70%" height="70%">
+![image](https://user-images.githubusercontent.com/72921481/229906559-1f224ed2-feea-411d-8f71-a09676241215.png)
+
+![image](https://user-images.githubusercontent.com/72921481/221565464-f8e7797a-ee8b-4aee-840d-12fe6725db25.png)
 
 - **borderless white points** (index 32, 33, ...): nodes in the outlier graphs
 
@@ -114,7 +136,10 @@ I **remove graphs that consist only of outliers**. For example, if I have a grap
 Consensus is the difference in 3D between the point after applying the transformation to the point at time `t-1` and the observed point at time `t`.
 
 ## Rejecting static rigid body transformations using adaptive thresholds
-<img src = "https://user-images.githubusercontent.com/72921481/224355171-81051050-c021-47af-a490-e1b389c61525.png" width="70%" height="70%">
+
+![image](https://user-images.githubusercontent.com/72921481/229908224-031d86f5-6717-4842-9f6c-54e26b2a042e.png)
+
+![image](https://user-images.githubusercontent.com/72921481/224355171-81051050-c021-47af-a490-e1b389c61525.png)
 
 - **colored points**: rigid body transformations proposed by RANSAC
 
@@ -122,7 +147,7 @@ Consensus is the difference in 3D between the point after applying the transform
 
 - **green text**: L2 error of the rigid body transform in 2D and 3D / thresholds
 
-### **Secondary extracts dynamic rigid body transformations with strict policies.**
+### **Extracts dynamic rigid body transformations with strict policies.**
 
 In my previous attempts at dynamic point extractions, I used a lenient policy that could mistakenly identify dynamic points as static points due to observation errors. While it achieved the intended goal, it also resulted in extracting a large number of static points. Therefore, I have decided to refine my approach once again.
 
@@ -138,7 +163,7 @@ When **dealing with a large number of input points**, I simplify the SVD registr
 
 To determine whether the points are dynamic or not, I calculate the difference for all points and divide it by the number of points. Then, I compare this value to the threshold in both 3D and 2D. Here are the details:
 
-- **Threshold in 3D**: $\alpha + {{\beta}\over{N}}$.
+- **Threshold in 3D**: $\alpha + {{\beta}\over{N}}$
 - **Threshold in 2D**: ${{\gamma}\over{\bar{z}}} + {{\delta}\over{N}}$
 - $\alpha, \beta, \gamma, \delta$: constants
 - $N$ : number of points
@@ -146,7 +171,7 @@ To determine whether the points are dynamic or not, I calculate the difference f
 
 When calculating the L2 difference in 3D, I also include a penalty in the z direction. This is to compensate for the depth inaccuracy of stereo cameras. For thresholds, **the second term helps to reduce uncertainty**, as using fewer points increases the probability of **overfitting based on the MLE**. More observations increase the probability of getting a distribution close to the truth by the law of large numbers.
 
-For 2D comparisons, **the first term compensates** for the disadvantage of comparing differences in 2D for **points closer to the camera**. This is because the **image projection** of an object is **inversely proportional to its depth**. The second term serves the same purpose as in the 3D case.
+For 2D comparisons, **the first term compensates** for the disadvantage of comparing differences in 2D for **points closer to the camera**. This is because the **image projection** of an object is **inversely proportional to its depth**. The second term serves the same purpose as in the 3D case. Similarly, for consistency, the error is evaluated for both viewpoints and the greater of the two is used..
 
 I have imposed stricter constraints for dynamic point extraction, as the following reasons suggest:
 
@@ -154,14 +179,55 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 - Since I **assume a rigid transformation** and have **information at both time `t-1` and `t`**, the **accuracy is higher** compared to comparing the **observation at time `t`** to the prediction that applies the camera's transformation to the point at `t-1`.
 
 ## Object refinement using on-manifold optimization
+![image](https://user-images.githubusercontent.com/72921481/229909167-247c43f8-30e4-4216-97ca-bb13d5b5419e.png)
+
 ![image](https://user-images.githubusercontent.com/72921481/226542049-9a5bf742-3b88-477b-9d34-cb8fe25bd12b.png)
 ![image](https://user-images.githubusercontent.com/72921481/226542088-362671ba-6cea-4c74-8524-359a64f4a948.png)
 
+### **On-manifold optimize 3D points and transformations with respect to observations.**
+To achieve accurate tracking information, I employ nonlinear optimization. This involves making slight adjustments to the 3D points and transformations at time t-1 to minimize the reprojection error. The initial values of the transforms are suggested by registration using SVD. The re-projection error is then evaluated for four views, resulting from assessing two time points across two viewpoints.
+
+$$argmin \sum_{t=0}^{1} \sum_{i=0}^{1} \sum_{j=0}^{N-1} (\textbf{p}_{i, t}-h(\textbf{T}_i \hat{\textbf{T}}_t \hat{\textbf{P}}))^T \Omega_{i, t} (\textbf{p}_{i, t}-h(\textbf{T}_i \hat{\textbf{T}}_t \hat{\textbf{P}})) $$
+- $t$: time point
+- $i$: camera index
+- $j$: point index
+- $N$: number of points
+- $\textbf{p}_{i, t}$: 2D point
+- $h()$: projection function
+- $\textbf{T}_i$: transformation from left camera to right camera
+- $\hat{\textbf{T}}_t$: transformation from time 0 to time t (parameter)
+- $\hat{\textbf{P}}$: 3D point represented at left camera time 0 (parameter)
+- $\Omega_{i, t}$: observation covariance
+
+When extracting features, OpenVINS follows a process that involves extracting features from the left view at time `t-1` and propagating them to the right view using KLT. Then, the points of both views are propagated to time `t`. As a result, the points of the right view at time `t-1` and the left view at time `t` undergo two KLTs, while the points of the right view at time `t` undergo three KLTs. Due to this process, **the observations corresponding to the original intended left view at time `t-1` become increasingly inaccurate**. To compensate for this, I assigned a different observation covariance to the points based on the number of times KLT was performed.
+
+While I could optimize the parameters subject to epipolar constraints, I decided to focus on the re-projection error to limit the complexity.
+
 ## Transformation association over time using the Hungarian algorithm
+![image](https://user-images.githubusercontent.com/72921481/229910084-9b2f24bb-7de1-4a1f-b6ea-7a4a76992b75.png)
+
 ![image](https://user-images.githubusercontent.com/72921481/226544979-ec2e09cb-7e57-438f-b41e-e24b249e0904.png)
+- **different colored circles**: 2D points assigned different transformations by color
+- **arrow**: KLT tracking
+
+### **Quickly associate transformations over time using the Hungarian algorithm.**
+
+To track dynamic objects, I associate newly proposed transformations with past transformations. I do this by counting the **number of connected KLTs between past and present dynamic objects**. Based on this, I construct a **cost matrix** and use the Hungarian algorithm to find the associations. This has an `O(N^3)` complexity, where `N` is the number of proposed transformations.
+
+To reduce outliers in real-world implementations, I assume that at least two KLT traces are required to be associated.
 
 
 ## Focusing on dynamic objects
+![image](https://user-images.githubusercontent.com/72921481/229910724-f1857db4-d026-4559-af3c-eb59dc0b3dd0.png)
+
 ![Screenshot from 2023-04-02 22-38-56](https://user-images.githubusercontent.com/72921481/229356816-db28c492-6510-4e3d-8b57-ba76763bfbfe.png)
 
+- **red-bordered green points**: dynamic points that are being tracked
+- **normal green points**: additional proposed dynamic points around the tracked point
+- **blue points**: points for SLAMs proposed outside the dynamic area.
 
+### Increase tracking and localization accuracy by focusing more on dynamic objects.
+
+To **isolate the dynamic points** from the SLAM system, they are tracked within an **independent data structure**. The grid occupied by the tracked points is classified as a **dynamic region**, where **additional dynamic points** are proposed, and all **SLAM points are removed**. This approach not only makes tracking more robust but also removes biased or dynamic points from the SLAM system. As a result, it reduces drift and enhances the robustness of the SLAM system.
+
+In dynamic regions, **more dynamic points are intentionally extracted** than regular SLAM features.
