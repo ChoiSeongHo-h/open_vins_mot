@@ -83,10 +83,10 @@ private:
   Eigen::Vector3d p_IinG_prev;
 
   // global  
-  std::unordered_map<int, int> iter_table;
+  std::map<int, int> iter_table;
   
   std::unordered_map<size_t, size_t> raw_idcs_table_prev;
-  
+
   std::map<size_t, cv::Scalar> tracked_labels_table_prev;
 
   size_t num_labels_prev;

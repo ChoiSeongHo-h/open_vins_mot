@@ -262,7 +262,10 @@ void ObjectTracker::reject_static_p3ds(const cv::Mat &all_p3ds_prev, const cv::M
     auto &all_p2ds_C1_prev = all_p2ds_set_C1[0];
     if (p3d_in_C0_pred.z() < 100 && p3d_in_C0_now.z() < 100 && weighted_L2_3d < 100 && (L2_2d > 5/fx0 || weighted_L2_3d > 0.1)) {
       p3ds_now->emplace_back(pcl::PointXYZ{(float)p3d_in_C0_now.x(), (float)p3d_in_C0_now.y(), (float)p3d_in_C0_now.z()});
-      p3ds_prev->emplace_back(pcl::PointXYZ{(float)p3d_in_C0_pred.x(), (float)p3d_in_C0_pred.y(), (float)p3d_in_C0_pred.z()});
+      float x_prev = all_p3ds_prev.at<double>(0, i)/all_p3ds_prev.at<double>(3, i);
+      float y_prev = all_p3ds_prev.at<double>(1, i)/all_p3ds_prev.at<double>(3, i);
+      float z_prev = all_p3ds_prev.at<double>(2, i)/all_p3ds_prev.at<double>(3, i);
+      p3ds_prev->emplace_back(pcl::PointXYZ{x_prev, y_prev, z_prev});
       raw_idcs.emplace_back(all_raw_idcs[i]);
       Eigen::Vector2d p2d_C0_prev((double)all_p2ds_C0_prev[i].x, (double)all_p2ds_C0_prev[i].y);
       Eigen::Vector2d p2d_C1_prev((double)all_p2ds_C1_prev[i].x, (double)all_p2ds_C1_prev[i].y);
@@ -337,8 +340,7 @@ void ObjectTracker::get_meas_and_pred(const std::shared_ptr<ov_msckf::State> &st
   Eigen::Vector3d p_C0_prev_to_now = p_GinC0_now - R_C0_prev_to_now * p_GinC0_prev;
   Eigen::Matrix<double, 3, 4> P_C0_prev_to_now;
   P_C0_prev_to_now << R_C0_prev_to_now, p_C0_prev_to_now;
-  Eigen::Matrix<double, 1, 4> T_bottom;
-  T_bottom << 0.0, 0.0, 0.0, 1.0;
+  Eigen::Matrix<double, 1, 4> T_bottom(0.0, 0.0, 0.0, 1.0);
   T_C0_prev_to_now << P_C0_prev_to_now, T_bottom;
   cv::Mat T_C0_prev_to_now_cv;
   cv::eigen2cv(T_C0_prev_to_now, T_C0_prev_to_now_cv);
@@ -418,8 +420,8 @@ bool ObjectTracker::pass_svd(std::vector<uchar> &mask_out, const std::vector<siz
 
   pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> svd;
   svd.estimateRigidTransformation(*inliers_prev, *inliers_now, inliers_tf);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_obs(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::transformPointCloud(*inliers_prev, *inliers_pred_obs, inliers_tf);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_meas(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::transformPointCloud(*inliers_prev, *inliers_pred_meas, inliers_tf);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr inliers_pred_ego(new pcl::PointCloud<pcl::PointXYZ>);
   Eigen::Matrix4f T_C0BtoC0A_f = T_C0_prev_to_now.cast<float>();
@@ -430,7 +432,7 @@ bool ObjectTracker::pass_svd(std::vector<uchar> &mask_out, const std::vector<siz
   double L2_2d_C1 = 0.0;
   double z_mean = 0.0;
   for (size_t i = 0; i<(size_t)max_elements; ++i) {
-    Eigen::Vector3f weighted_diff_3d = inliers_pred_obs->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
+    Eigen::Vector3f weighted_diff_3d = inliers_pred_meas->at(i).getVector3fMap() - inliers_pred_ego->at(i).getVector3fMap();
     weighted_diff_3d(2, 0) *= Z_PENALTY;
     weighted_L2_3d += (double)weighted_diff_3d.norm();
 
@@ -438,27 +440,27 @@ bool ObjectTracker::pass_svd(std::vector<uchar> &mask_out, const std::vector<siz
       (double)inliers_pred_ego->at(i).x/(double)inliers_pred_ego->at(i).z,
       (double)inliers_pred_ego->at(i).y/(double)inliers_pred_ego->at(i).z
     );
-    Eigen::Vector2d p2d_pred_obs_C0(
-      (double)inliers_pred_obs->at(i).x/(double)inliers_pred_obs->at(i).z,
-      (double)inliers_pred_obs->at(i).y/(double)inliers_pred_obs->at(i).z
+    Eigen::Vector2d p2d_pred_meas_C0(
+      (double)inliers_pred_meas->at(i).x/(double)inliers_pred_meas->at(i).z,
+      (double)inliers_pred_meas->at(i).y/(double)inliers_pred_meas->at(i).z
     );
-    L2_2d_C0 += (p2d_pred_ego_C0-p2d_pred_obs_C0).norm();
+    L2_2d_C0 += (p2d_pred_ego_C0-p2d_pred_meas_C0).norm();
 
     Eigen::Vector3d inliers_pred_ego_in_C1 = inliers_pred_ego->at(i).getVector3fMap().cast<double>();
     inliers_pred_ego_in_C1 = R_C0toC1_now*inliers_pred_ego_in_C1 + p_C0inC1_now;
-    Eigen::Vector3d inliers_pred_obs_in_C1 = inliers_pred_obs->at(i).getVector3fMap().cast<double>();
-    inliers_pred_obs_in_C1 = R_C0toC1_now*inliers_pred_obs_in_C1 + p_C0inC1_now;
+    Eigen::Vector3d inliers_pred_meas_in_C1 = inliers_pred_meas->at(i).getVector3fMap().cast<double>();
+    inliers_pred_meas_in_C1 = R_C0toC1_now*inliers_pred_meas_in_C1 + p_C0inC1_now;
     Eigen::Vector2d p2d_pred_ego_C1(
       inliers_pred_ego_in_C1.x()/inliers_pred_ego_in_C1.z(),
       inliers_pred_ego_in_C1.y()/inliers_pred_ego_in_C1.z()
     );
-    Eigen::Vector2d p2d_pred_obs_C1(
-      inliers_pred_obs_in_C1.x()/inliers_pred_obs_in_C1.z(),
-      inliers_pred_obs_in_C1.y()/inliers_pred_obs_in_C1.z()
+    Eigen::Vector2d p2d_pred_meas_C1(
+      inliers_pred_meas_in_C1.x()/inliers_pred_meas_in_C1.z(),
+      inliers_pred_meas_in_C1.y()/inliers_pred_meas_in_C1.z()
     );
-    L2_2d_C1 += (p2d_pred_ego_C1-p2d_pred_obs_C1).norm();
+    L2_2d_C1 += (p2d_pred_ego_C1-p2d_pred_meas_C1).norm();
 
-    z_mean += inliers_pred_obs->at(i).z;
+    z_mean += inliers_pred_meas->at(i).z;
   }
   weighted_L2_3d /= max_elements;
   L2_2d_C0 *= fx0/max_elements;
@@ -586,8 +588,11 @@ void ObjectTracker::optimize(const Eigen::Matrix4f &inliers_tf, const std::vecto
   std::vector<Eigen::Vector3d> p3ds_para;
   for (size_t i = 0; i<compact_idcs.size(); ++i) {
     size_t idx = compact_idcs[i];
-    Eigen::Vector3d p3d_para;
-    p3d_para << (double)p3ds_prev->at(idx).x, (double)p3ds_prev->at(idx).y, (double)p3ds_prev->at(idx).z;
+    Eigen::Vector3d p3d_para(
+      (double)p3ds_prev->at(idx).x,
+      (double)p3ds_prev->at(idx).y,
+      (double)p3ds_prev->at(idx).z
+    );
     p3ds_para.emplace_back(p3d_para);
   }
   for (size_t i = 0; i<compact_idcs.size(); ++i) {
@@ -617,12 +622,11 @@ void ObjectTracker::optimize(const Eigen::Matrix4f &inliers_tf, const std::vecto
 
   Eigen::Quaterniond q_refine(q_para[0], q_para[1], q_para[2], q_para[3]);
   Eigen::Vector3d p_refine(p_para[0], p_para[1], p_para[2]);
-  for(size_t i = 0; i<p3ds_para.size(); ++i)
-  {
+  for(size_t i = 0; i<p3ds_para.size(); ++i) {
     Eigen::Vector3d p3d_refine = q_refine * p3ds_para[i] + p_refine;
     size_t idx = compact_idcs[i];
+    p3ds_prev->at(idx) = pcl::PointXYZ((float)p3ds_para[i].x(), (float)p3ds_para[i].y(), (float)p3ds_para[i].z());
     p3ds_now->at(idx) = pcl::PointXYZ((float)p3d_refine.x(), (float)p3d_refine.y(), (float)p3d_refine.z());
-    p2ds_C0_now[idx] = Eigen::Vector2d(p3d_refine.x()/p3d_refine.z(), p3d_refine.y()/p3d_refine.z());
   }
 }
 
@@ -820,7 +824,7 @@ std::cout<<std::endl;
   std::vector<std::pair<size_t, size_t>> pairs_temp;
 printf("pairs\n");
   for(int i = 0; i<pairs.size(); ++i) {
-    if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val)
+    if(cost_matrix[pairs[i].first][pairs[i].second] >= -min_val-1)
       continue;
   
     pairs_temp.emplace_back(pairs[i]);
