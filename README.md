@@ -187,7 +187,7 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 ### **On-manifold optimize 3D points and transformations with respect to observations.**
 To achieve accurate tracking information, I employ nonlinear optimization. This involves making slight adjustments to the 3D points and transformations at time t-1 to minimize the reprojection error. The initial values of the transforms are suggested by registration using SVD. The re-projection error is then evaluated for four views, resulting from assessing two time points across two viewpoints.
 
-$$argmin \sum_{t=0}^{1} \sum_{i=0}^{1} \sum_{j=0}^{N-1} (\textbf{p}_{i, t}-h(\textbf{T}_i \hat{\textbf{T}}_t \hat{\textbf{P}}))^T \Omega_{i, t} (\textbf{p}_{i, t}-h(\textbf{T}_i \hat{\textbf{T}}_t \hat{\textbf{P}})) $$
+$$argmin \sum_{t=0}^{1} \sum_{i=0}^{1} \sum_{j=0}^{N-1} (\textbf{p} _ {i, t}-h(\textbf{T} _ i \hat{\textbf{T}} _ t \hat{\textbf{P}}))^T \Omega _ {i, t} (\textbf{p} _ {i, t}-h(\textbf{T} _ i \hat{\textbf{T}} _ t \hat{\textbf{P}}))$$
 - $t$: time point
 - $i$: camera index
 - $j$: point index
