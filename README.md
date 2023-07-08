@@ -17,7 +17,7 @@ https://user-images.githubusercontent.com/72921481/229364790-3a80e7f2-2ea3-4612-
 5. Nonlinear optimization of points and dynamic rigid body transformations
 6. Improving tracking and localization accuracy by focusing on dynamic objects
 
-## Environmental
+## 1 Environmental
 - **Stereo cameras** to determine a moving 3D point at a point in time
 - **IMU** to help prevent the system from being dominated by dynamic objects
 - **OpenCV** 4.2   
@@ -28,7 +28,7 @@ https://user-images.githubusercontent.com/72921481/229364790-3a80e7f2-2ea3-4612-
 - **OpenVINS** 2.6.2   
 - Testing on the **KAIST Complex Urban Dataset**   
 
-## Rejecting outliers using stereo extrinsics
+## 2 Rejecting outliers using stereo extrinsics
 ![image](https://user-images.githubusercontent.com/72921481/229905482-b76a9507-2645-4995-8732-33c5d62e5d2a.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/219631769-70dda35a-7cfb-4231-84f3-c2c070bbc06b.png)
@@ -53,7 +53,7 @@ The stereo cameras are assumed to be time synchronised, as assumed by OpenVINS.
 
 The test is performed at both time `t-1` and `t`.
 
-## Extracting dynamic points using L2 in 3D and reprojection errors
+## 3 Extracting dynamic points using L2 in 3D and reprojection errors
 ![image](https://user-images.githubusercontent.com/72921481/229908887-6b7899e6-e946-4272-8cc9-cc828c8aceb4.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/220283402-932e872c-7f6a-4a10-a6ea-b5f9abe0aa8a.png)
@@ -90,7 +90,7 @@ I penalize the z direction in the 3D comparison to compensate for the inaccurate
 
 For consistency, the re-projection error is evaluated for both viewpoints and the greater of the two is used.
 
-## Graph construction using k-d tree
+## 4 Graph construction using k-d tree
 ![image](https://user-images.githubusercontent.com/72921481/229906079-dd92f9e8-92e6-41fe-9919-c7821b57dcf5.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/220625831-a154603b-4e85-4cbb-9c41-88596bc39952.png)
@@ -112,7 +112,7 @@ To address these issues, I construct the graph by using a k-d tree in 3D for the
 
 This algorithm has a time complexity of `O(N log N)`, where `N` is the number of dynamic points.
 
-## Providing initial labels and removing outlier graphs using RANSAC and registration
+## 5 Providing initial labels and removing outlier graphs using RANSAC and registration
 ![image](https://user-images.githubusercontent.com/72921481/229906559-1f224ed2-feea-411d-8f71-a09676241215.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/221565464-f8e7797a-ee8b-4aee-840d-12fe6725db25.png)
@@ -135,7 +135,7 @@ I **remove graphs that consist only of outliers**. For example, if I have a grap
 
 Consensus is the difference in 3D between the point after applying the transformation to the point at time `t-1` and the observed point at time `t`.
 
-## Rejecting static rigid body transformations using adaptive thresholds
+## 6 Rejecting static rigid body transformations using adaptive thresholds
 
 ![image](https://user-images.githubusercontent.com/72921481/229908224-031d86f5-6717-4842-9f6c-54e26b2a042e.png)
 
@@ -178,7 +178,7 @@ I have imposed stricter constraints for dynamic point extraction, as the followi
 - Instead of analyzing individual points, I grouped them to analyze L2, which is less susceptible to errors.
 - Since I **assume a rigid transformation** and have **information at both time `t-1` and `t`**, the **accuracy is higher** compared to comparing the **observation at time `t`** to the prediction that applies the camera's transformation to the point at `t-1`.
 
-## Object refinement using on-manifold optimization
+## 7 Object refinement using on-manifold optimization
 ![image](https://user-images.githubusercontent.com/72921481/229909167-247c43f8-30e4-4216-97ca-bb13d5b5419e.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/226542049-9a5bf742-3b88-477b-9d34-cb8fe25bd12b.png)
@@ -203,7 +203,7 @@ When extracting features, OpenVINS follows a process that involves extracting fe
 
 While I could optimize the parameters subject to epipolar constraints, I decided to focus on the re-projection error to limit the complexity.
 
-## Transformation association over time using the Hungarian algorithm
+## 8 Transformation association over time using the Hungarian algorithm
 ![image](https://user-images.githubusercontent.com/72921481/229910084-9b2f24bb-7de1-4a1f-b6ea-7a4a76992b75.png)
 
 ![image](https://user-images.githubusercontent.com/72921481/226544979-ec2e09cb-7e57-438f-b41e-e24b249e0904.png)
@@ -217,7 +217,7 @@ To track dynamic objects, I associate newly proposed transformations with past t
 To reduce outliers in real-world implementations, I assume that at least two KLT traces are required to be associated.
 
 
-## Focusing on dynamic objects
+## 9 Focusing on dynamic objects
 ![image](https://user-images.githubusercontent.com/72921481/229910724-f1857db4-d026-4559-af3c-eb59dc0b3dd0.png)
 
 ![Screenshot from 2023-04-02 22-38-56](https://user-images.githubusercontent.com/72921481/229356816-db28c492-6510-4e3d-8b57-ba76763bfbfe.png)
